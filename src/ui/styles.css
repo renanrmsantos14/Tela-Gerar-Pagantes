@@ -92,3 +92,33 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 @media (max-width: 560px) { .selection-actions { align-items: stretch; }.selection-actions .ui-button { min-height: 44px; }.selection-continue { min-width: 0; }.compact-step { align-items: flex-start; }.compact-step__actions { flex-wrap: wrap; justify-content: flex-end; } }
 @media (max-width: 380px) { .sticky-action-bar { align-items: end; }.action-meta { max-width: 108px; }.version { font-size: 10px; white-space: nowrap; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+
+/* UX de preenchimento: erros aparecem no campo que precisa de acao. */
+.payer-row.has-error { border-color: #f2c2cc; background: #fffafb; }
+.ui-field > input.is-invalid { border-color: #c12f45; background: #fffafb; }
+.ui-field > input.is-invalid:focus-visible { border-color: #c12f45; box-shadow: 0 0 0 3px rgba(193,47,69,.14); }
+.ui-field small { line-height: 1.35; }
+.empty-state { grid-column: 1 / -1; padding: 18px; border: 1px dashed var(--bt-line); border-radius: 10px; background: var(--bt-neutral); }
+.people-grid:has(.empty-state) { max-height: none; }
+
+@media (min-width: 821px) {
+  .payer-row { grid-template-columns: minmax(170px, 1.25fr) minmax(105px, .75fr) minmax(125px, .95fr) minmax(180px, 1.25fr) minmax(190px, 1.1fr); }
+}
+
+@media (max-width: 820px) {
+  .payer-row { grid-template-columns: 1fr 1fr; }
+  .payer-identity, .payer-link { grid-column: 1 / -1; }
+  .payer-options { grid-column: 1 / -1; }
+}
+
+@media (max-width: 560px) {
+  .operation-header__actions { gap: 6px; }
+  .operation-header__actions .ui-icon-button { width: 44px; height: 44px; }
+  .selection-actions { flex-direction: column-reverse; }
+  .selection-actions .ui-button { width: 100%; }
+}
+
+@media (max-width: 380px) {
+  .payer-row { grid-template-columns: 1fr; }
+  .payer-identity, .payer-link, .payer-options { grid-column: auto; }
+}

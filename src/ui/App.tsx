@@ -64,7 +64,8 @@ export function App() {
     const messages: string[] = []
     if (!payers.length) messages.push('Selecione pelo menos um pagante.')
     if (payers.some((payer) => payer.amountCents <= 0)) messages.push('Todo pagante deve possuir valor maior que zero.')
-    if (remaining !== 0) messages.push(`Rateio deve totalizar ${formatCurrency(operation.totalCents)}.`)
+    if (remaining > 0) messages.push(`Falta ratear ${formatCurrency(remaining)} para fechar o total da OP.`)
+    if (remaining < 0) messages.push(`O rateio excede o total da OP em ${formatCurrency(Math.abs(remaining))}.`)
     if (payers.some((payer) => payer.generateLink && !emailValid(payer.email))) messages.push('Informe um e-mail válido para quem receberá link de pagamento.')
     return messages
   }, [operation, payers, remaining])
@@ -102,7 +103,10 @@ export function App() {
       const result = await submitOperation(operation.id, { requestId: crypto.randomUUID(), expectedFinanceiroVersion: operation.version, financeiroDisplayId: operation.displayId, totalCents: operation.totalCents, serviceStartDate: null, serviceEndDate: null, pagantes: payers.map((payer) => ({ paganteId: payer.id, existingPaganteId: payer.existingPayerId, name: payer.name, email: payer.email, amountCents: payer.amountCents, paymentMethod: payer.paymentMethod, generateLink: payer.generateLink, sendEmail: payer.sendEmail })) })
       if (!result.success) throw new Error(result.errors.map((error) => error.message).join(' ') || 'A operação não foi concluída.')
       const flowError = result.errors.find((error) => error.code === 'FLOW_NOT_STARTED')
-      setNotice({ tone: 'success', text: flowError ? `Pagantes gravados. Processamento pendente: ${flowError.message}` : 'Pagantes gravados. E-mails serão enviados após o processamento.' }); setConfirmOpen(false); await refresh()
+      const successText = flowError ? `Pagantes gravados. Processamento pendente: ${flowError.message}` : 'Pagantes gravados. E-mails serão enviados após o processamento.'
+      setConfirmOpen(false)
+      await refresh()
+      setNotice({ tone: 'success', text: successText })
     } catch (error) {
       await logAppError(error, { source: 'React', action: 'save', phase: 'submit-operation', component: 'App', detailId: operation.id, detailType: 'cr40f_financeiro' })
       setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível gerar os pagantes.' })
