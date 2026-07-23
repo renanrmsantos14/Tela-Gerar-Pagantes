@@ -90,12 +90,3 @@ export interface SubmitResult {
   }>
   errors: Array<{ code: string; message: string; paganteId?: Guid }>
 }
-
-export interface FlowPayerResult {
-  paganteId: Guid
-  paganteRecordId: Guid
-  linkStatus: LinkStatus
-  emailStatus: EmailStatus
-  paymentUrl?: string
-  error?: string
-}

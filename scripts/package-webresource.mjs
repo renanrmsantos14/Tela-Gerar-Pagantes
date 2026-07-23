@@ -16,3 +16,4 @@ await cp(resolve('webresources/Script_GerarPagantes.js'), resolve('package/webre
 await cp(resolve('webresources/Script_GerarPagantes.js'), resolve('package/webresources/Script_AbrirTelaGerarPagantes.js'))
 await cp(resolve('dataverse'), resolve('package/dataverse'), { recursive: true })
 await cp(resolve('src/Plugins'), resolve('package/plugins'), { recursive: true })
+await cp(resolve('assets/email'), resolve('package/assets/email'), { recursive: true })

@@ -1,6 +1,5 @@
 import { demoOperation } from './demo'
-import type { FlowPayerResult, Guid, OperationData, Payer, Person, SubmitRequest, SubmitResult } from './domain'
-import { logAppError, logAppOperation } from './errorLogger'
+import type { Guid, OperationData, Payer, Person, SubmitRequest, SubmitResult } from './domain'
 
 interface RetrieveResult { entities: Array<Record<string, unknown>>; nextLink?: string }
 
@@ -19,15 +18,6 @@ interface XrmApi {
 declare global { interface Window { Xrm?: XrmApi } }
 
 const guidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const linkStatusNotApplicable = 202410000
-const linkStatusPending = 202410001
-const payerStatusPending = 202410001
-const flowUrlEnvironmentVariable = 'new_FlowURLGerarPagantesHttp'
-const paymentMethods = new Set([202410000, 202410001, 202410002])
-const paidStatuses = new Set(['Pago', 'Autorizado'])
-const generationTable = 'cr40f_geracaopagantesoperacao'
-const activeGenerationWindowMs = 15 * 60 * 1000
-
 function toLinkStatus(value: string): Payer['linkStatus'] {
   if (value === 'Pendente') return 'Pending'
   if (value === 'Concluido') return 'Generated'
@@ -46,15 +36,6 @@ function getXrm(): XrmApi | undefined {
   if (window.Xrm) return window.Xrm
   try { return window.parent !== window ? window.parent.Xrm : undefined }
   catch { return undefined }
-}
-
-function normalizeComparable(value: unknown): string {
-  return String(value ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('pt-BR')
-}
-
-function currentOperator(): { id: string; name: string } {
-  const settings = getXrm()?.Utility?.getGlobalContext?.().userSettings
-  return { id: String(settings?.userId ?? '').replace(/[{}]/g, ''), name: String(settings?.userName ?? '') }
 }
 
 function assertOperationEditable(finance: Record<string, unknown>): void {
@@ -200,55 +181,10 @@ export async function loadOperation(recordId: Guid): Promise<OperationData> {
   }
 }
 
-function isMissingGenerationTableError(error: unknown): boolean {
-  let serialized: string
-  try { serialized = error instanceof Error ? `${error.message} ${JSON.stringify(error)}` : JSON.stringify(error) }
-  catch { serialized = String(error) }
-  return serialized.includes(generationTable) && /metadata does not exist|n[aã]o [ée] poss[ií]vel localizar a entidade|entidade inv[aá]lida/i.test(serialized)
-}
-
-async function beginGenerationLock(financeiroId: Guid, request: SubmitRequest): Promise<Guid | null> {
-  const api = getXrm()?.WebApi
-  if (!api) return request.requestId
-  try {
-    const recent = await fetchAll(generationTable, `?$select=cr40f_geracaopagantesoperacaoid,cr40f_request_id,cr40f_sucesso,cr40f_resultado,createdon&$filter=_cr40f_financeiro_value eq ${financeiroId} and cr40f_sucesso eq false&$orderby=createdon desc&$top=1`)
-    const latest = recent[0]
-    if (latest) {
-      const createdAt = Date.parse(text(latest, 'createdon'))
-      const processing = (() => { try { return JSON.parse(text(latest, 'cr40f_resultado')).status === 'Processing' } catch { return false } })()
-      if (processing && (!createdAt || Date.now() - createdAt < activeGenerationWindowMs)) {
-        throw new Error('Já existe outra geração de pagantes em processamento nesta OP.')
-      }
-    }
-    const operator = currentOperator()
-    const created = await api.createRecord(generationTable, {
-      cr40f_name: `Geração ${request.financeiroDisplayId} - ${request.requestId}`,
-      cr40f_request_id: request.requestId,
-      'cr40f_Financeiro@odata.bind': `/cr40f_financeiros(${financeiroId})`,
-      cr40f_sucesso: false,
-      cr40f_resultado: JSON.stringify({ status: 'Processing', operatorId: operator.id, operatorName: operator.name, financeiroVersion: request.expectedFinanceiroVersion, allocationSummary: { totalCents: request.totalCents, allocatedCents: request.pagantes.reduce((sum, payer) => sum + payer.amountCents, 0), payerCount: request.pagantes.length } })
-    })
-    return normalizeGuid(created.id)
-  } catch (error) {
-    if (!isMissingGenerationTableError(error)) throw error
-    console.warn(`[GerarPagantes] Tabela opcional ${generationTable} ausente; geração seguirá sem lock.`, error)
-    return null
-  }
-}
-
-async function finishGenerationLock(lockId: Guid | null, request: SubmitRequest, result: SubmitResult): Promise<void> {
-  const api = getXrm()?.WebApi
-  if (!api || !lockId) return
-  await api.updateRecord(generationTable, lockId, {
-    cr40f_sucesso: result.success,
-    cr40f_resultado: JSON.stringify({ status: result.success ? 'Completed' : 'Failed', requestId: request.requestId, results: result.results, errors: result.errors })
-  })
-}
-
 export async function submitOperation(financeiroId: Guid, request: SubmitRequest): Promise<SubmitResult> {
   const api = getXrm()?.WebApi
   const totalCents = request.pagantes.reduce((sum, payer) => sum + payer.amountCents, 0)
-  if (!api) return { success: true, requestId: request.requestId, financeiroId, totalCents, results: request.pagantes.map((payer) => ({ paganteId: payer.paganteId, pagantesRecordId: payer.existingPaganteId ?? payer.paganteId, linkStatus: payer.generateLink ? 'Pending' : 'NotApplicable', emailStatus: payer.sendEmail ? 'Pending' : 'NotApplicable' })), errors: [] }
+  if (!api) return { success: true, requestId: request.requestId, financeiroId, totalCents, results: request.pagantes.map((payer) => ({ paganteId: payer.paganteId, pagantesRecordId: payer.existingPaganteId ?? payer.paganteId, linkStatus: payer.generateLink ? 'Generated' : 'NotApplicable', emailStatus: payer.sendEmail ? 'Sent' : 'NotApplicable' })), errors: [] }
   if (totalCents !== request.totalCents && !request.allowTotalMismatch) throw new Error('O total dos pagantes não fecha com o total da OP.')
 
   const finance = await api.retrieveRecord('cr40f_financeiro', financeiroId, '?$select=versionnumber,statecode,statuscode,_ownerid_value')
@@ -257,238 +193,30 @@ export async function submitOperation(financeiroId: Guid, request: SubmitRequest
   const freshTotalCents = await fetchOperationTotal(financeiroId)
   if (freshTotalCents !== request.totalCents) throw new Error('O valor da OP mudou. Atualize os dados antes de salvar.')
 
-  if (request.replaceExisting) {
-    const api = getXrm()?.WebApi.online
-    if (!api?.execute) throw new Error('A substituição segura não está publicada no ambiente. Nenhum pagante foi apagado.')
-    const customApiRequest = {
-      Target: { entityType: 'cr40f_financeiro', id: financeiroId },
-      cr40f_RequestJson: JSON.stringify({ ...request, replaceExisting: true, pagantes: request.pagantes.map((payer) => ({ ...payer, existingPaganteId: undefined, generateLink: false, sendEmail: false })) }),
-      getMetadata: () => ({ boundParameter: null, parameterTypes: { Target: { typeName: 'Microsoft.Dynamics.CRM.cr40f_financeiro', structuralProperty: 5 }, cr40f_RequestJson: { typeName: 'Edm.String', structuralProperty: 1 } }, operationType: 0, operationName: 'cr40f_GerarPagantes' })
-    }
-    const response = await api.execute(customApiRequest)
-    if (response.ok === false) throw new Error('A Cielo não confirmou o cancelamento dos links existentes. Nenhum pagante foi apagado.')
-    const body = await response.json()
-    const raw = String(body.cr40f_ResponseJson ?? '')
-    const customResult = raw ? JSON.parse(raw) as SubmitResult : null
-    if (!customResult?.success || !Array.isArray(customResult.results)) throw new Error('A substituição não foi confirmada pelo servidor. Nenhum pagante foi apagado.')
-    if (!request.pagantes.some((payer) => payer.generateLink || payer.sendEmail)) return customResult
-    const flowUrl = await resolveFlowUrl()
-    const flowResults = await startGerarPagantesFlow(flowUrl, financeiroId, request, customResult.results)
-    const byPayer = new Map(flowResults.map((item) => [item.paganteId, item]))
-    customResult.results.forEach((result) => Object.assign(result, byPayer.get(result.paganteId)))
-    customResult.success = customResult.errors.length === 0 && flowResults.every((item) => !item.error)
-    return customResult
+  const online = api.online
+  if (!online?.execute) throw new Error('A Custom API cr40f_GerarPagantes não está publicada neste ambiente.')
+  const customApiRequest = {
+    Target: { entityType: 'cr40f_financeiro', id: financeiroId },
+    cr40f_RequestJson: JSON.stringify(request),
+    getMetadata: () => ({
+      boundParameter: 'Target',
+      parameterTypes: {
+        Target: { typeName: 'Microsoft.Dynamics.CRM.cr40f_financeiro', structuralProperty: 5 },
+        cr40f_RequestJson: { typeName: 'Edm.String', structuralProperty: 1 }
+      },
+      operationType: 0,
+      operationName: 'cr40f_GerarPagantes'
+    })
   }
-
-  const needsFlow = request.pagantes.some((payer) => payer.generateLink || payer.sendEmail)
-  const existingRows = await fetchExistingPayers(financeiroId)
-  const existingById = new Map(existingRows.map((row) => [text(row, 'cr40f_pagantesid'), row]))
-  const keptIds = new Set(request.pagantes.map((payer) => payer.existingPaganteId).filter((id): id is Guid => Boolean(id)))
-  const results: SubmitResult['results'] = []
-
-  await validateBeforeWrite(financeiroId, request, existingRows, existingById)
-  const lockId = await beginGenerationLock(financeiroId, request)
-  let finalResult: SubmitResult
-
-  try {
-    for (const row of existingRows) {
-      const existingId = text(row, 'cr40f_pagantesid')
-      if (existingId && !keptIds.has(existingId)) {
-        if (text(row, 'cr40f_cielolinkid')) throw new Error('Não é permitido remover um pagante que possui link Cielo ativo. Cancele o link antes de alterar o rateio.')
-        await api.deleteRecord('cr40f_pagantes', existingId)
-      }
-    }
-
-    for (const payer of request.pagantes) {
-      const existing = payer.existingPaganteId ? existingById.get(payer.existingPaganteId) : undefined
-      const changed = !existing
-        || lookup(existing, '_cr40f_bancodedados_value') !== payer.paganteId
-        || moneyToCents(existing.cr40f_valor) !== payer.amountCents
-        || Number(existing.cr40f_formadepagamento ?? 202410000) !== payer.paymentMethod
-        || !payer.generateLink
-
-      if (existing && changed && text(existing, 'cr40f_cielolinkid')) throw new Error('Não é permitido alterar um pagante que possui link Cielo ativo. Cancele o link antes de refazer o rateio.')
-
-      const payload = buildPayerRecord(financeiroId, payer, changed)
-      let pagantesRecordId = payer.existingPaganteId
-      if (pagantesRecordId) await api.updateRecord('cr40f_pagantes', pagantesRecordId, payload)
-      else {
-        const created = await api.createRecord('cr40f_pagantes', payload)
-        pagantesRecordId = normalizeGuid(created.id)
-      }
-
-      results.push({ paganteId: payer.paganteId, pagantesRecordId, linkStatus: payer.generateLink ? 'Pending' : 'NotApplicable', emailStatus: payer.sendEmail ? 'Pending' : 'NotApplicable' })
-    }
-
-    const errors: SubmitResult['errors'] = []
-    if (needsFlow) {
-      try {
-        const flowUrl = await resolveFlowUrl()
-        const flowResults = await startGerarPagantesFlow(flowUrl, financeiroId, request, results)
-        const byPayer = new Map(flowResults.map((item) => [item.paganteId, item]))
-        for (const result of results) {
-          const flowResult = byPayer.get(result.paganteId)
-          if (!flowResult || flowResult.paganteRecordId !== result.pagantesRecordId) throw new Error(`O Flow não confirmou o pagante ${result.paganteId}.`)
-          Object.assign(result, flowResult)
-          if (flowResult.error) errors.push({ code: 'FLOW_PAYER_ERROR', message: flowResult.error, paganteId: result.paganteId })
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Não foi possível acionar o Flow HTTP.'
-        await logAppError(error, { source: 'Web Resource', action: 'startGerarPagantesFlow', phase: 'flow-http', component: 'dataverse', detailId: financeiroId, detailType: 'cr40f_financeiro', payload: { requestId: request.requestId } })
-        console.error('[GerarPagantes] Pagantes gravados, mas o Flow não foi acionado.', error)
-        errors.push({ code: 'FLOW_NOT_STARTED', message })
-      }
-    }
-
-    finalResult = { success: errors.length === 0, requestId: request.requestId, financeiroId, totalCents, results, errors }
-    await finishGenerationLock(lockId, request, finalResult)
-    const operator = currentOperator()
-    await logAppOperation({ action: 'gerar-pagantes', detailId: financeiroId, operatorId: operator.id, operatorName: operator.name, financeiroVersion: request.expectedFinanceiroVersion, allocationSummary: { totalCents: request.totalCents, allocatedCents: totalCents, payerCount: request.pagantes.length }, payload: { requestId: request.requestId, results, errors } })
-    return finalResult
-  } catch (error) {
-    finalResult = { success: false, requestId: request.requestId, financeiroId, totalCents, results, errors: [{ code: 'SAVE_FAILED', message: error instanceof Error ? error.message : 'Falha ao gravar pagantes.' }] }
-    try { await finishGenerationLock(lockId, request, finalResult) } catch { /* preserve original error */ }
-    throw error
-  }
-}
-
-async function validateBeforeWrite(financeiroId: Guid, request: SubmitRequest, existingRows: Array<Record<string, unknown>>, existingById: Map<string, Record<string, unknown>>): Promise<void> {
-  const api = getXrm()?.WebApi
-  if (!api) return
-  if (!request.pagantes.length) throw new Error('Selecione ao menos um pagante.')
-  const payerIds = new Set(request.pagantes.map((payer) => payer.paganteId))
-  if (payerIds.size !== request.pagantes.length) throw new Error('Existem pagantes duplicados no rateio.')
-  if (request.pagantes.some((payer) => !guidPattern.test(payer.paganteId) || !Number.isInteger(payer.amountCents) || payer.amountCents <= 0 || !paymentMethods.has(payer.paymentMethod))) throw new Error('O rateio possui pagante, valor ou forma de pagamento inválidos.')
-  if (request.pagantes.some((payer) => payer.sendEmail && (!payer.generateLink || !guidPattern.test(payer.recipientId ?? '') || !payer.recipientName?.trim() || !/^\S+@\S+\.\S+$/.test(payer.recipientEmail?.trim() ?? '')))) throw new Error('Envio de e-mail exige destinatário selecionado e e-mail válido para cada pagante.')
-  const people = await fetchAll('cr40f_bancodedados', `?$select=cr40f_bancodedadosid,cr40f_nomedopassageiro,cr40f_email,cr40f_status&$filter=${Array.from(payerIds).map((id) => `cr40f_bancodedadosid eq ${id}`).join(' or ')}`)
-  const peopleById = new Map(people.map((row) => [text(row, 'cr40f_bancodedadosid'), row]))
-  if (peopleById.size !== payerIds.size || people.some((row) => Number(row.cr40f_status) === 202410001)) throw new Error('Um dos pagantes não existe ou está inativo no Dataverse. Atualize a tela.')
-  for (const payer of request.pagantes) {
-    const person = peopleById.get(payer.paganteId)
-    if (!person || normalizeComparable(person.cr40f_nomedopassageiro) !== normalizeComparable(payer.name) || normalizeComparable(person.cr40f_email) !== normalizeComparable(payer.email)) throw new Error(`Os dados do pagante ${payer.paganteId} divergem do Dataverse. Atualize a tela.`)
-    if (!payer.existingPaganteId) continue
-    const existing = existingById.get(payer.existingPaganteId)
-    if (existing && lookup(existing, '_cr40f_bancodedados_value') !== payer.paganteId) throw new Error('O registro de pagante não corresponde à pessoa selecionada. Atualize a tela.')
-    if (!existing || lookup(existing, '_cr40f_financeiro_value') && lookup(existing, '_cr40f_financeiro_value') !== financeiroId) throw new Error('Um registro de pagante não pertence a esta OP. Atualize a tela.')
-    const status = text(existing, 'cr40f_status@OData.Community.Display.V1.FormattedValue')
-    if (paidStatuses.has(status)) throw new Error(`O pagante ${payer.name} já está ${status} e não pode ser alterado.`)
-  }
-  for (const row of existingRows) {
-    if (keptIdsFor(request).has(text(row, 'cr40f_pagantesid'))) continue
-    const status = text(row, 'cr40f_status@OData.Community.Display.V1.FormattedValue')
-    if (paidStatuses.has(status)) throw new Error(`O pagante ${status} não pode ser removido do rateio.`)
-    if (text(row, 'cr40f_cielolinkid')) throw new Error('O rateio não pode remover pagante com link Cielo ativo.')
-  }
-}
-
-function keptIdsFor(request: SubmitRequest): Set<string> { return new Set(request.pagantes.map((payer) => payer.existingPaganteId).filter((id): id is string => Boolean(id))) }
-
-function buildPayerRecord(financeiroId: Guid, payer: SubmitRequest['pagantes'][number], resetLink: boolean): Record<string, unknown> {
-  const payload: Record<string, unknown> = {
-    'cr40f_Financeiro@odata.bind': `/cr40f_financeiros(${financeiroId})`,
-    'cr40f_BancodeDados@odata.bind': `/cr40f_bancodedadoses(${payer.paganteId})`,
-    cr40f_valor: payer.amountCents / 100,
-    cr40f_formadepagamento: payer.paymentMethod,
-    cr40f_status: payerStatusPending,
-    cr40f_statusgeracaolink: payer.generateLink ? linkStatusPending : linkStatusNotApplicable,
-    cr40f_statusenvioemail: payer.sendEmail ? linkStatusPending : linkStatusNotApplicable,
-    cr40f_errogeracaolink: null,
-    cr40f_erroenvioemail: null
-  }
-
-  if (resetLink || !payer.generateLink) {
-    payload.cr40f_cielolinkid = null
-    payload.cr40f_cieloordernumber = null
-    payload.cr40f_linkdepagamento = null
-  }
-
-  return payload
-}
-
-async function startGerarPagantesFlow(url: string, financeiroId: Guid, request: SubmitRequest, results: SubmitResult['results']): Promise<FlowPayerResult[]> {
-  const operator = currentOperator()
-  const body = JSON.stringify({
-    requestId: request.requestId,
-    financeiroId,
-    financeiroDisplayId: request.financeiroDisplayId,
-    operatorId: operator.id,
-    operatorName: operator.name,
-    financeiroVersion: request.expectedFinanceiroVersion,
-    totalCents: request.totalCents,
-    allocationSummary: { allocatedCents: request.pagantes.reduce((sum, payer) => sum + payer.amountCents, 0), payerCount: request.pagantes.length },
-    serviceStartDate: request.serviceStartDate ?? null,
-    serviceEndDate: request.serviceEndDate ?? null,
-    pagantes: request.pagantes.map((payer) => ({
-      paganteRecordId: results.find((result) => result.paganteId === payer.paganteId)?.pagantesRecordId,
-      paganteId: payer.paganteId,
-      name: payer.name,
-      email: payer.email,
-      recipientId: payer.recipientId,
-      recipientName: payer.recipientName,
-      recipientEmail: payer.recipientEmail,
-      amountCents: payer.amountCents,
-      paymentMethod: payer.paymentMethod,
-      generateLink: payer.generateLink,
-      sendEmail: payer.sendEmail
-    }))
-  })
-
-  type FlowHttpResponse = { success?: boolean; requestId?: string; message?: string; results?: FlowPayerResult[]; errors?: Array<{ paganteId?: Guid; message?: string }> }
-  let response: Response | undefined
-  let result: FlowHttpResponse | null = null
-  let lastError: unknown
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const controller = new AbortController()
-    const timeout = window.setTimeout(() => controller.abort(), 15000)
-    try {
-      response = await fetch(url, { method: 'POST', mode: 'cors', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body, signal: controller.signal })
-      const responseText = await response.text()
-      try {
-        result = responseText ? JSON.parse(responseText) as FlowHttpResponse : null
-      } catch {
-        result = null
-      }
-      if (response.ok && result?.success) break
-      const responseDetail = result?.message || responseText.trim().slice(0, 1000) || response.statusText
-      lastError = new Error(`Flow HTTP retornou ${response.status}${responseDetail ? `: ${responseDetail}` : '.'}`)
-      console.error('[GerarPagantes] Falha HTTP ao acionar Flow.', {
-        attempt: attempt + 1,
-        requestId: request.requestId,
-        status: response.status,
-        statusText: response.statusText,
-        response: responseText.slice(0, 1000)
-      })
-      if (response.status < 500 && response.status !== 408 && response.status !== 429) break
-    } catch (error) {
-      lastError = error instanceof DOMException && error.name === 'AbortError'
-        ? new Error('Flow HTTP excedeu o limite de 15 segundos.')
-        : error
-      console.error('[GerarPagantes] Erro de rede ao acionar Flow.', {
-        attempt: attempt + 1,
-        requestId: request.requestId,
-        error: lastError
-      })
-    } finally {
-      window.clearTimeout(timeout)
-    }
-    if (attempt < 2) await new Promise((resolve) => window.setTimeout(resolve, 400 * (attempt + 1)))
-  }
-  if (!response?.ok || !result?.success) throw lastError instanceof Error ? lastError : new Error(result?.message || 'Não foi possível concluir o Flow HTTP.')
-  if (result.requestId !== request.requestId || !Array.isArray(result.results)) throw new Error('O Flow retornou uma confirmação inválida para esta geração.')
-  const expectedIds = new Set(results.map((item) => item.paganteId))
-  const validStatuses = new Set(['NotApplicable', 'Generated', 'Pending', 'Failed', 'Indeterminate'])
+  const response = await online.execute(customApiRequest)
+  if (response.ok === false) throw new Error('A Custom API recusou a geração dos pagantes.')
+  const body = await response.json()
+  const raw = String(body.cr40f_ResponseJson ?? '')
+  const result = raw ? JSON.parse(raw) as SubmitResult : null
+  const validLinkStatuses = new Set(['NotApplicable', 'Generated', 'Pending', 'Failed', 'Indeterminate'])
   const validEmailStatuses = new Set(['NotApplicable', 'Sent', 'Pending', 'Failed'])
-  if (result.results.length !== expectedIds.size || result.results.some((item) => !expectedIds.has(item.paganteId) || !validStatuses.has(item.linkStatus) || !validEmailStatuses.has(item.emailStatus) || !guidPattern.test(item.paganteRecordId))) throw new Error('O Flow não confirmou todos os pagantes individualmente.')
-  console.info('[GerarPagantes] Flow HTTP confirmado por pagante.', { requestId: request.requestId, count: result.results.length })
-  return result.results
-}
-
-async function resolveFlowUrl(): Promise<string> {
-  const rows = await fetchAll('environmentvariabledefinition', `?$select=schemaname,defaultvalue&$filter=schemaname eq '${flowUrlEnvironmentVariable}'&$expand=environmentvariabledefinition_environmentvariablevalue($select=value)`)
-  const definition = rows[0]
-  const values = definition?.environmentvariabledefinition_environmentvariablevalue
-  const current = Array.isArray(values) ? text(values[0] as Record<string, unknown>, 'value') : ''
-  const url = current || (definition ? text(definition, 'defaultvalue') : '')
-  if (!url) throw new Error(`Configure a variavel de ambiente ${flowUrlEnvironmentVariable} com a URL do Flow HTTP.`)
-  return url
+  const requestedIds = new Set(request.pagantes.map((payer) => payer.paganteId))
+  if (!result || result.requestId !== request.requestId || result.financeiroId !== financeiroId || !Array.isArray(result.results) || !Array.isArray(result.errors)) throw new Error('A Custom API retornou uma confirmação inválida.')
+  if (result.results.length !== requestedIds.size || result.results.some((item) => !requestedIds.has(item.paganteId) || !guidPattern.test(item.pagantesRecordId) || !validLinkStatuses.has(item.linkStatus) || !validEmailStatuses.has(item.emailStatus))) throw new Error('A Custom API não confirmou todos os pagantes individualmente.')
+  return result
 }

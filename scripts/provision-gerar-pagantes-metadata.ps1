@@ -5,7 +5,9 @@ param(
 
   [string] $SolutionUniqueName = 'appbetinhos',
 
-  [string] $WorkflowId,
+  [string] $EmailAssetsPath = (Join-Path $PSScriptRoot '..\assets\email'),
+
+  [string] $EmailAssetPrefix = 'cr40f_/GerarPagantes/email/',
 
   [switch] $DeviceCode
 )
@@ -45,6 +47,40 @@ function Localized([string] $label) {
 
 function Add-SolutionComponent([string] $componentId, [int] $componentType, $headers) {
   Invoke-Dataverse 'Post' "$api/AddSolutionComponent" $headers @{ ComponentId = $componentId; ComponentType = $componentType; SolutionUniqueName = $SolutionUniqueName; AddRequiredComponents = $false } | Out-Null
+}
+
+function Ensure-WebResource([string] $fileName, [int] $webResourceType, $headers) {
+  $sourcePath = Join-Path $EmailAssetsPath $fileName
+  if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+    throw "Asset de e-mail nao encontrado: $sourcePath"
+  }
+
+  $resourceName = "$EmailAssetPrefix$fileName"
+  $escapedName = $resourceName.Replace("'", "''")
+  $lookupUrl = "$api/webresourceset?`$select=webresourceid,name&`$filter=name eq '$escapedName' and componentstate eq 0"
+  $current = Invoke-Dataverse 'Get' $lookupUrl $headers
+  $payload = @{
+    name = $resourceName
+    displayname = "Gerar Pagantes - $fileName"
+    description = 'Asset inline do e-mail de link de pagamento.'
+    webresourcetype = $webResourceType
+    content = [Convert]::ToBase64String([IO.File]::ReadAllBytes($sourcePath))
+  }
+
+  if (@($current.value).Count -eq 0) {
+    Invoke-Dataverse 'Post' "$api/webresourceset" $headers $payload | Out-Null
+    $current = Invoke-Dataverse 'Get' $lookupUrl $headers
+  } else {
+    $webResourceId = $current.value[0].webresourceid
+    Invoke-Dataverse 'Patch' "$api/webresourceset($webResourceId)" $headers $payload | Out-Null
+  }
+
+  if (@($current.value).Count -ne 1) {
+    throw "Falha ao localizar web resource provisionado: $resourceName"
+  }
+
+  Add-SolutionComponent $current.value[0].webresourceid 61 $headers
+  Write-Host "[gerar-pagantes:metadata] asset pronto: $resourceName"
 }
 
 function Get-Attribute([string] $logicalName, $headers) {
@@ -90,16 +126,18 @@ $attributes = @(
 
 foreach ($attribute in $attributes) { Ensure-Attribute $attribute $headers }
 
-$definitionUrl = "$api/environmentvariabledefinitions?`$select=environmentvariabledefinitionid&`$filter=schemaname eq 'new_FlowURLGerarPagantesHttp'"
-$definition = Invoke-Dataverse 'Get' $definitionUrl $headers
-if (@($definition.value).Count -eq 0) {
-  $created = Invoke-Dataverse 'Post' "$api/environmentvariabledefinitions" $headers @{ schemaname = 'new_FlowURLGerarPagantesHttp'; displayname = 'Flow URL Gerar Pagantes HTTP'; description = 'URL do Flow HTTP Gerar Pagantes'; type = 100000000; isrequired = $false }
-  $definitionId = $created.environmentvariabledefinitionid
-} else { $definitionId = $definition.value[0].environmentvariabledefinitionid }
-Add-SolutionComponent $definitionId 380 $headers
-if ($WorkflowId) {
-  Add-SolutionComponent $WorkflowId 29 $headers
-  Write-Host "[gerar-pagantes:metadata] flow adicionado a solucao: $WorkflowId"
+$emailAssets = @(
+  @{ FileName = 'cabecalho.png'; Type = 5 },
+  @{ FileName = 'instrucoes-cabecalho.jpg'; Type = 6 },
+  @{ FileName = 'instrucoes.jpg'; Type = 6 },
+  @{ FileName = 'conte-como-foi-a-viagem.jpg'; Type = 6 },
+  @{ FileName = 'icone-financeiro.png'; Type = 5 },
+  @{ FileName = 'icone-operacional.png'; Type = 5 },
+  @{ FileName = 'icone-comercial.png'; Type = 5 }
+)
+foreach ($emailAsset in $emailAssets) {
+  Ensure-WebResource $emailAsset.FileName $emailAsset.Type $headers
 }
+
 Invoke-Dataverse 'Post' "$api/PublishAllXml" $headers @{} | Out-Null
 Write-Host '[gerar-pagantes:metadata] metadados publicados na solucao appbetinhos.'

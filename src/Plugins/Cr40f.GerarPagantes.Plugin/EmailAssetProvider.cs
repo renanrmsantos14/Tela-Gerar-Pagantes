@@ -9,13 +9,13 @@ public sealed class EmailAssetProvider
 {
     private static readonly AssetDefinition[] Definitions =
     {
-        new("header", "cabecalho.png"),
-        new("instructions-header", "instrucoes-cabecalho.png"),
-        new("instructions", "instrucoes.png"),
-        new("trip-feedback", "conte-como-foi-a-viagem.png"),
-        new("finance-icon", "icone-financeiro.png"),
-        new("operations-icon", "icone-operacional.png"),
-        new("commercial-icon", "icone-comercial.png")
+        new("header", "cabecalho.png", "image/png"),
+        new("instructions-header", "instrucoes-cabecalho.jpg", "image/jpeg"),
+        new("instructions", "instrucoes.jpg", "image/jpeg"),
+        new("trip-feedback", "conte-como-foi-a-viagem.jpg", "image/jpeg"),
+        new("finance-icon", "icone-financeiro.png", "image/png"),
+        new("operations-icon", "icone-operacional.png", "image/png"),
+        new("commercial-icon", "icone-comercial.png", "image/png")
     };
 
     private readonly IOrganizationService _service;
@@ -49,16 +49,17 @@ public sealed class EmailAssetProvider
             if (rows.Count != 1) throw new InvalidPluginExecutionException($"Web resource de e-mail ausente ou duplicado: {name}.");
             var content = rows[0].GetAttributeValue<string>("content");
             if (string.IsNullOrWhiteSpace(content)) throw new InvalidPluginExecutionException($"Web resource de e-mail sem conteúdo: {name}.");
-            assets.Add(new InlineEmailAsset(definition.ContentId, definition.FileName, "image/png", content));
+            assets.Add(new InlineEmailAsset(definition.ContentId, definition.FileName, definition.ContentType, content));
         }
         return assets;
     }
 
     private sealed class AssetDefinition
     {
-        public AssetDefinition(string contentId, string fileName) { ContentId = contentId; FileName = fileName; }
+        public AssetDefinition(string contentId, string fileName, string contentType) { ContentId = contentId; FileName = fileName; ContentType = contentType; }
         public string ContentId { get; }
         public string FileName { get; }
+        public string ContentType { get; }
     }
 }
 

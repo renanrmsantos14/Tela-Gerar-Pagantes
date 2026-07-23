@@ -67,7 +67,7 @@ public sealed class PluginSettings
         : value.Trim();
 
     private static bool IsEmail(string? value) => !string.IsNullOrWhiteSpace(value) &&
-        System.Text.RegularExpressions.Regex.IsMatch(value.Trim(), @"^\S+@\S+\.\S+$");
+        System.Text.RegularExpressions.Regex.IsMatch(value!.Trim(), @"^\S+@\S+\.\S+$");
 
     private sealed class PublicSettings
     {

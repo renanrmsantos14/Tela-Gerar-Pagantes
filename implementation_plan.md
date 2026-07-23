@@ -12,8 +12,9 @@ status, auditoria e retorno individual por pagante.
 - Plugin será a única camada autorizada a criar, alterar ou excluir
   `cr40f_pagantes`.
 - Link Cielo será criado ou cancelado dentro do plugin.
-- E-mail será enviado como atividade Dataverse por `SendEmailRequest`, usando a
-  mailbox configurada no ambiente. O plugin não usará o conector Outlook.
+- E-mail será enviado pelo Microsoft Graph dentro do plugin. A organização está
+  com `allowunresolvedpartiesonemailsend=false`; `SendEmailRequest` não atende de
+  forma confiável destinatários externos arbitrários.
 - As sete imagens atuais do SharePoint serão transportadas pela solução como
   web resources e anexadas inline por CID. Os binários ainda não existem no
   repo e deverão ser obtidos da origem SharePoint antes do gate final.
@@ -44,10 +45,10 @@ status, auditoria e retorno individual por pagante.
   - preservar compensação de links criados.
 - `[NEW] src/Plugins/Cr40f.GerarPagantes.Plugin/PluginSettings.cs`
   - ler e validar configuração segura/não segura do step.
-- `[NEW] src/Plugins/Cr40f.GerarPagantes.Plugin/DataverseEmailSender.cs`
-  - resolver queue/systemuser remetente;
-  - criar `email`, `activityparty` e anexos inline;
-  - executar `SendEmailRequest`;
+- `[NEW] src/Plugins/Cr40f.GerarPagantes.Plugin/GraphEmailClient.cs`
+  - autenticar por client credentials;
+  - enviar pela mailbox configurada com `Mail.Send`;
+  - anexar as imagens inline por CID;
   - retornar sucesso ou erro sanitizado.
 - `[NEW] src/Plugins/Cr40f.GerarPagantes.Plugin/PaymentEmailRenderer.cs`
   - portar o HTML atual do Flow;
@@ -120,7 +121,8 @@ status, auditoria e retorno individual por pagante.
 
 - Plugin síncrono tem limite de execução; múltiplos pagantes com Cielo e envio
   de e-mail podem excedê-lo. O smoke definirá um limite operacional explícito.
-- Envio depende de mailbox Dataverse aprovada e habilitada em cada ambiente.
+- Envio depende de App Registration com `Mail.Send`, consentimento de
+  administrador e acesso restrito à mailbox remetente em cada ambiente.
 - Imagens atuais não estão no repo. Sem os sete binários não existe paridade
   visual comprovável com o e-mail do Flow.
 - Cielo é efeito externo e não participa da transação Dataverse; compensação

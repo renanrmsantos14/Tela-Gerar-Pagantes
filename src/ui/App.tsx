@@ -162,7 +162,7 @@ export function App() {
       setSaved(true); setDirty(false)
       await refresh(true)
       setNotice(null)
-      setSuccessFeedback('Pagantes gravados. E-mails serão enviados após o processamento.')
+      setSuccessFeedback('Pagantes processados. Links e e-mails foram confirmados.')
     } catch (error) {
       console.error('[GerarPagantes] Não foi possível gerar os pagantes.', { financeiroId: operation.id, error })
       await logAppError(error, { source: 'React', action: 'save', phase: 'submit-operation', component: 'App', detailId: operation.id, detailType: 'cr40f_financeiro' })

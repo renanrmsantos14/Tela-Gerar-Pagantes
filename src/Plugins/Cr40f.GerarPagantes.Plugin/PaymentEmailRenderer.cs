@@ -27,14 +27,14 @@ public sealed class PaymentEmailRenderer
             ? string.Empty
             : "- " + end;
         var body = _template
-            .Replace("{{PAYER_NAME}}", Encode(payer.Name))
+            .Replace("{{PAYER_NAME}}", Encode(payer.RecipientName))
             .Replace("{{SERVICE_START_DATE}}", Encode(start))
             .Replace("{{SERVICE_END_DATE}}", Encode(endLabel))
             .Replace("{{AMOUNT}}", Encode((payer.AmountCents / 100m).ToString("C", CultureInfo.GetCultureInfo("pt-BR"))))
             .Replace("{{PAYMENT_URL}}", WebUtility.HtmlEncode(paymentUrl));
         var operation = string.IsNullOrWhiteSpace(request.FinanceiroDisplayId) ? "OP" : request.FinanceiroDisplayId.Trim();
         return new PaymentEmail(
-            $"Link de Pagamento {operation} para {payer.Name?.Trim()} | Betinhos Executive Service",
+            $"Link de Pagamento {operation} para {payer.RecipientName?.Trim()} | Betinhos Executive Service",
             body);
     }
 

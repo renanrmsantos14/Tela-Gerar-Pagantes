@@ -90,7 +90,7 @@ public sealed class GerarPagantesPlugin : IPlugin
             {
                 foreach (var linkId in createdLinks)
                 {
-                    try { cielo.DeleteLinkAsync(linkId).GetAwaiter().GetResult(); }
+                    try { cielo?.DeleteLinkAsync(linkId).GetAwaiter().GetResult(); }
                     catch (Exception cleanupError) { QueueCleanup(service, linkId, cleanupError.Message); }
                 }
                 throw new InvalidPluginExecutionException("Não foi possível concluir a geração dos pagantes. " + Sanitize(operationError.Message), operationError);
@@ -117,7 +117,7 @@ public sealed class GerarPagantesPlugin : IPlugin
     private static GerarPagantesRequest DeserializeRequest(IPluginExecutionContext context)
     {
         var json = context.InputParameters.Contains("cr40f_RequestJson") ? context.InputParameters["cr40f_RequestJson"] as string : null;
-        return !string.IsNullOrWhiteSpace(json) ? JsonConvert.DeserializeObject<GerarPagantesRequest>(json) ?? throw new InvalidPluginExecutionException("Payload inválido.") : throw new InvalidPluginExecutionException("cr40f_RequestJson é obrigatório.");
+        return !string.IsNullOrWhiteSpace(json) ? JsonConvert.DeserializeObject<GerarPagantesRequest>(json!) ?? throw new InvalidPluginExecutionException("Payload inválido.") : throw new InvalidPluginExecutionException("cr40f_RequestJson é obrigatório.");
     }
 
     private static void ValidateVersion(Entity finance, string expectedVersion)
@@ -135,12 +135,12 @@ public sealed class GerarPagantesPlugin : IPlugin
         if (request.Pagantes.Any(p => p.SendEmail && (!p.GenerateLink || p.RecipientId == Guid.Empty || string.IsNullOrWhiteSpace(p.RecipientName) || !System.Text.RegularExpressions.Regex.IsMatch(p.RecipientEmail?.Trim() ?? "", @"^\S+@\S+\.\S+$")))) throw new InvalidPluginExecutionException("Envio de e-mail exige link e destinatário válido.");
         if (request.Pagantes.Sum(p => p.AmountCents) != totalCents && !request.AllowTotalMismatch) throw new InvalidPluginExecutionException("O total do rateio diverge do valor da OP.");
         var ids = request.Pagantes.Select(p => p.PaganteId).Concat(request.Pagantes.Where(p => p.SendEmail).Select(p => p.RecipientId)).Distinct().ToArray();
-        var people = service.RetrieveMultiple(new QueryExpression("cr40f_bancodedados") { ColumnSet = new ColumnSet("cr40f_nomedopassageiro", "cr40f_email", "cr40f_status"), Criteria = new FilterExpression(LogicalOperator.And) { Conditions = { new ConditionExpression("cr40f_bancodedadosid", ConditionOperator.In, ids.Cast<object>().ToArray()) } } }).Entities.ToDictionary(p => p.Id);
+        var people = service.RetrieveMultiple(new QueryExpression("cr40f_bancodedados") { ColumnSet = new ColumnSet("cr40f_nomedopassageiro", "cr40f_email", "statecode"), Criteria = new FilterExpression(LogicalOperator.And) { Conditions = { new ConditionExpression("cr40f_bancodedadosid", ConditionOperator.In, ids.Cast<object>().ToArray()) } } }).Entities.ToDictionary(p => p.Id);
         foreach (var payer in request.Pagantes)
         {
-            if (!people.TryGetValue(payer.PaganteId, out var person) || person.GetAttributeValue<OptionSetValue>("cr40f_status")?.Value == Pending) throw new InvalidPluginExecutionException("Um pagante não existe ou está inativo.");
+            if (!people.TryGetValue(payer.PaganteId, out var person) || person.GetAttributeValue<OptionSetValue>("statecode")?.Value == 1) throw new InvalidPluginExecutionException("Um pagante não existe ou está inativo.");
             if (!string.Equals(person.GetAttributeValue<string>("cr40f_nomedopassageiro")?.Trim(), payer.Name?.Trim(), StringComparison.Ordinal) || !string.Equals(person.GetAttributeValue<string>("cr40f_email")?.Trim(), payer.Email?.Trim(), StringComparison.OrdinalIgnoreCase)) throw new InvalidPluginExecutionException("Os dados do pagante divergem do Dataverse.");
-            if (payer.SendEmail && (!people.TryGetValue(payer.RecipientId, out var recipient) || recipient.GetAttributeValue<OptionSetValue>("cr40f_status")?.Value == Pending || !string.Equals(recipient.GetAttributeValue<string>("cr40f_nomedopassageiro")?.Trim(), payer.RecipientName?.Trim(), StringComparison.Ordinal) || !string.Equals(recipient.GetAttributeValue<string>("cr40f_email")?.Trim(), payer.RecipientEmail?.Trim(), StringComparison.OrdinalIgnoreCase))) throw new InvalidPluginExecutionException("Os dados do destinatário divergem do Dataverse.");
+            if (payer.SendEmail && (!people.TryGetValue(payer.RecipientId, out var recipient) || recipient.GetAttributeValue<OptionSetValue>("statecode")?.Value == 1 || !string.Equals(recipient.GetAttributeValue<string>("cr40f_nomedopassageiro")?.Trim(), payer.RecipientName?.Trim(), StringComparison.Ordinal) || !string.Equals(recipient.GetAttributeValue<string>("cr40f_email")?.Trim(), payer.RecipientEmail?.Trim(), StringComparison.OrdinalIgnoreCase))) throw new InvalidPluginExecutionException("Os dados do destinatário divergem do Dataverse.");
         }
     }
 
@@ -244,6 +244,11 @@ public sealed class GerarPagantesPlugin : IPlugin
             {
                 result.LinkStatus = "Generated";
                 result.PaymentUrl = existing!.GetAttributeValue<string>("cr40f_linkdepagamento");
+                service.Update(new Entity(Pagantes, result.PagantesRecordId)
+                {
+                    ["cr40f_statusgeracaolink"] = new OptionSetValue(Completed),
+                    ["cr40f_errogeracaolink"] = null
+                });
             }
             else
             {
@@ -342,6 +347,33 @@ public sealed class GerarPagantesPlugin : IPlugin
         ColumnSet = new ColumnSet(false), TopCount = 1,
         Criteria = new FilterExpression(LogicalOperator.And) { Conditions = { new ConditionExpression("cr40f_request_id", ConditionOperator.Equal, requestId.ToString("D")) } }
     }).Entities.Any();
+
+    private static bool IsLockedPayer(Entity row)
+    {
+        var status = row.FormattedValues.TryGetValue("cr40f_status", out var label) ? label : string.Empty;
+        return status.Equals("Pago", StringComparison.OrdinalIgnoreCase) ||
+            status.Equals("Autorizado", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildCieloName(GerarPagantesRequest request, PaganteRequest payer)
+    {
+        var operation = string.IsNullOrWhiteSpace(request.FinanceiroDisplayId) ? "OP" : request.FinanceiroDisplayId.Trim();
+        var payerName = string.IsNullOrWhiteSpace(payer.Name) ? "Pagante" : payer.Name.Trim();
+        return $"{operation} | {payerName}";
+    }
+
+    private static string BuildCieloDescription(GerarPagantesRequest request)
+    {
+        var start = FormatDate(request.ServiceStartDate);
+        var end = FormatDate(request.ServiceEndDate);
+        if (string.IsNullOrWhiteSpace(start) && string.IsNullOrWhiteSpace(end)) return "Serviços prestados de transporte executivo.";
+        if (string.IsNullOrWhiteSpace(end) || start == end) return $"Serviços prestados de transporte em {start}.";
+        return $"Serviços prestados de transporte no período {start} - {end}.";
+    }
+
+    private static string FormatDate(string? value) => DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var date)
+        ? date.ToString("dd/MM/yyyy", CultureInfo.GetCultureInfo("pt-BR"))
+        : string.Empty;
 
     private static string CreateOrderNumber(Guid financeiroId, Guid payerId, Guid requestId) => (financeiroId.ToString("N") + payerId.ToString("N") + requestId.ToString("N")).Substring(0, 20).ToUpperInvariant();
     private static string Sanitize(string message) => string.IsNullOrWhiteSpace(message) ? "Erro não detalhado." : message.Length > 500 ? message.Substring(0, 500) : message;

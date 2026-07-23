@@ -9,12 +9,14 @@ var environmentUrl = options.Require("environmentUrl");
 var dllPath = options.Require("dllPath");
 var solutionUniqueName = options.Require("solutionUniqueName");
 var publish = options.Has("publish");
-var unsecureConfiguration = options.Optional("unsecureConfiguration");
-var secureConfiguration = options.Optional("secureConfiguration");
+var unsecureConfiguration = options.Optional("unsecureConfiguration") ??
+    Environment.GetEnvironmentVariable("GERAR_PAGANTES_PLUGIN_PUBLIC_CONFIG");
+var secureConfiguration = options.Optional("secureConfiguration") ??
+    Environment.GetEnvironmentVariable("GERAR_PAGANTES_PLUGIN_SECURE_CONFIG");
 
 if ((unsecureConfiguration is null) != (secureConfiguration is null))
 {
-    throw new InvalidOperationException("As configuracoes Cielo devem ser informadas juntas.");
+    throw new InvalidOperationException("As configuracoes publica e segura do plugin devem ser informadas juntas.");
 }
 
 if (!File.Exists(dllPath))
@@ -26,6 +28,7 @@ const string PluginTypeName = "Cr40f.GerarPagantes.Plugin.GerarPagantesPlugin";
 const string CustomApiMessageName = "cr40f_GerarPagantes";
 const string BoundEntity = "cr40f_financeiro";
 const int PluginAssemblyComponentType = 91;
+const int SdkMessageProcessingStepComponentType = 92;
 
 Log("autenticando no Dataverse");
 var connectionString = $"AuthType=OAuth;Url={environmentUrl.TrimEnd('/')};AppId=51f81489-12ee-4a9e-aaae-a2591f45987d;RedirectUri=http://localhost;LoginPrompt=Auto";
@@ -39,8 +42,10 @@ var assemblyInfo = AssemblyInfo.Read(dllPath);
 var assemblyContent = Convert.ToBase64String(File.ReadAllBytes(dllPath));
 var assemblyId = UpsertAssembly(service, assemblyInfo, assemblyContent);
 var pluginTypeId = UpsertPluginType(service, assemblyId);
-EnsureCustomApi(service, pluginTypeId, solutionUniqueName, CustomApiMessageName, BoundEntity);
+var customApiId = EnsureCustomApi(service, pluginTypeId, solutionUniqueName, CustomApiMessageName, BoundEntity);
+var stepId = ConfigureMainOperationStep(service, customApiId, pluginTypeId, unsecureConfiguration, secureConfiguration);
 EnsureSolutionComponent(service, assemblyId, solutionUniqueName, PluginAssemblyComponentType);
+EnsureSolutionComponent(service, stepId, solutionUniqueName, SdkMessageProcessingStepComponentType);
 
 if (publish)
 {
@@ -155,6 +160,69 @@ static Guid EnsureCustomApi(ServiceClient service, Guid pluginTypeId, string sol
     return customApiId;
 }
 
+static Guid ConfigureMainOperationStep(
+    ServiceClient service,
+    Guid customApiId,
+    Guid pluginTypeId,
+    string? unsecureConfiguration,
+    string? secureConfiguration)
+{
+    var customApi = service.Retrieve("customapi", customApiId, new ColumnSet("sdkmessageid"));
+    var sdkMessage = customApi.GetAttributeValue<EntityReference>("sdkmessageid")
+        ?? throw new InvalidOperationException("A Custom API não possui mensagem SDK publicada.");
+    var rows = service.RetrieveMultiple(new QueryExpression("sdkmessageprocessingstep")
+    {
+        ColumnSet = new ColumnSet("configuration", "sdkmessageprocessingstepsecureconfigid", "name"),
+        TopCount = 2,
+        Criteria = new FilterExpression(LogicalOperator.And)
+        {
+            Conditions =
+            {
+                new ConditionExpression("sdkmessageid", ConditionOperator.Equal, sdkMessage.Id),
+                new ConditionExpression("eventhandler", ConditionOperator.Equal, pluginTypeId),
+                new ConditionExpression("stage", ConditionOperator.Equal, 30)
+            }
+        }
+    }).Entities;
+    if (rows.Count != 1) throw new InvalidOperationException($"Step MainOperation da Custom API não encontrado de forma única. Quantidade: {rows.Count}.");
+    var step = rows.Single();
+
+    if (unsecureConfiguration is not null)
+    {
+        Log("atualizando configuração pública do step");
+        service.Update(new Entity("sdkmessageprocessingstep", step.Id) { ["configuration"] = unsecureConfiguration });
+    }
+
+    if (secureConfiguration is not null)
+    {
+        var secureReference = step.GetAttributeValue<EntityReference>("sdkmessageprocessingstepsecureconfigid");
+        Guid secureConfigId;
+        if (secureReference is null)
+        {
+            Log("criando configuração segura do step");
+            secureConfigId = service.Create(new Entity("sdkmessageprocessingstepsecureconfig")
+            {
+                ["secureconfig"] = secureConfiguration
+            });
+            service.Update(new Entity("sdkmessageprocessingstep", step.Id)
+            {
+                ["sdkmessageprocessingstepsecureconfigid"] = Ref("sdkmessageprocessingstepsecureconfig", secureConfigId)
+            });
+        }
+        else
+        {
+            Log("atualizando configuração segura do step");
+            secureConfigId = secureReference.Id;
+            service.Update(new Entity("sdkmessageprocessingstepsecureconfig", secureConfigId)
+            {
+                ["secureconfig"] = secureConfiguration
+            });
+        }
+    }
+
+    return step.Id;
+}
+
 static void EnsureSolutionComponent(ServiceClient service, Guid componentId, string solutionUniqueName, int componentType)
 {
     try
@@ -166,11 +234,11 @@ static void EnsureSolutionComponent(ServiceClient service, Guid componentId, str
             ["SolutionUniqueName"] = solutionUniqueName,
             ["AddRequiredComponents"] = true
         });
-        Log($"assembly incluido na solucao {solutionUniqueName}");
+        Log($"componente {componentType} incluido na solucao {solutionUniqueName}");
     }
     catch (Exception error) when (error.Message.Contains("already", StringComparison.OrdinalIgnoreCase) || error.Message.Contains("ja existe", StringComparison.OrdinalIgnoreCase))
     {
-        Log($"assembly ja pertence a solucao {solutionUniqueName}");
+        Log($"componente {componentType} ja pertence a solucao {solutionUniqueName}");
     }
 }
 

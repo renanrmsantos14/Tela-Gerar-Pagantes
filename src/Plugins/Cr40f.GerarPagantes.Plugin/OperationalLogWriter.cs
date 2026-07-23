@@ -51,13 +51,44 @@ internal sealed class OperationalLogWriter
         }
     }
 
+    public void TryWritePayerError(IPluginExecutionContext context, Guid financeiroId, Guid pagantesRecordId, Guid payerId, string message)
+    {
+        try
+        {
+            var record = new Entity(Table);
+            record["new_name"] = "Tela Gerar Pagantes - falha por pagante";
+            record["new_occurredat"] = DateTime.UtcNow;
+            record["new_severity"] = "error";
+            record["new_source"] = "Dataverse plugin";
+            record["new_action"] = "ProcessPayer";
+            record["new_phase"] = "Custom API";
+            record["new_component"] = "Cr40f.GerarPagantes.Plugin";
+            record["new_detailid"] = pagantesRecordId.ToString("D");
+            record["new_detailtype"] = "cr40f_pagantes";
+            record["new_message"] = Truncate(message, MessageMaxLength);
+            record["new_errorname"] = "PayerProcessingFailure";
+            record["new_appname"] = "Tela Gerar Pagantes";
+            record["new_payloadjson"] = "{" +
+                $"\"correlationId\":\"{EscapeJson(context.CorrelationId.ToString())}\"," +
+                $"\"financeiroId\":\"{financeiroId:D}\"," +
+                $"\"pagantesRecordId\":\"{pagantesRecordId:D}\"," +
+                $"\"payerId\":\"{payerId:D}\"" +
+                "}";
+            _service.Create(record);
+        }
+        catch (Exception loggingError)
+        {
+            _tracing?.Trace("GerarPagantes OperationalLogWriter payer log failed: {0}", loggingError);
+        }
+    }
+
     private static string GetErrorCode(Exception exception)
     {
         var fault = exception as FaultException<OrganizationServiceFault>;
         return fault?.Detail?.ErrorCode.ToString() ?? "";
     }
 
-    private static string BuildPayloadJson(IPluginExecutionContext context)
+    private static string BuildPayloadJson(IPluginExecutionContext? context)
     {
         if (context == null) return "{}";
         return "{" +

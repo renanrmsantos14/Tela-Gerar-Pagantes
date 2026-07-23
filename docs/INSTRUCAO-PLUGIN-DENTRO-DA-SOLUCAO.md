@@ -200,9 +200,15 @@ Client ID, client secret, tokens e URLs específicas não devem ser gravados em:
 - solução exportada;
 - web resource.
 
-Use configuração específica por ambiente. Para valores consumidos por Flows e componentes de solução, use variáveis de ambiente. Para segredos, use o mecanismo seguro aprovado pela organização, como Azure Key Vault.
+Neste projeto, o registrador grava IDs, remetente, Reply-To, destinatários
+internos e prefixo dos assets na configuração não segura do step. Os segredos
+Cielo e Graph são gravados em `sdkmessageprocessingstepsecureconfig`.
 
-Se o plugin exigir configuração segura própria, o Pipeline deve ter uma etapa pós-importação para configurar esse valor no ambiente destino. A solução transporta a estrutura; não deve transportar o segredo.
+O App Registration do Microsoft Graph exige `Mail.Send` Application, consentimento
+de administrador e acesso à mailbox remetente. Restrinja o aplicativo à mailbox
+necessária por política do Exchange. O Pipeline deve executar a configuração
+pós-importação em cada ambiente; a solução transporta a estrutura, não os
+segredos.
 
 ## Validação após o deploy
 
@@ -215,9 +221,13 @@ Request: cr40f_RequestJson
 Response: cr40f_ResponseJson
 Assembly: Cr40f.GerarPagantes.Plugin
 Plugin type: Cr40f.GerarPagantes.Plugin.GerarPagantesPlugin
+Secure config: Cielo e Graph presentes
+Email assets: cr40f_/GerarPagantes/email/*
 ```
 
-Teste também a chamada real pelo web resource. Um erro `404 Resource not found for the segment 'cr40f_GerarPagantes'` indica que a Custom API não foi transportada ou não foi publicada no ambiente destino.
+Teste também a chamada real pelo web resource, a criação do link e o recebimento
+do e-mail externo. Um erro `404 Resource not found for the segment
+'cr40f_GerarPagantes'` indica que a Custom API não foi transportada ou publicada.
 
 ## Prompt reutilizável
 
