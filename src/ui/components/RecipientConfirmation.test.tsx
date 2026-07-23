@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { Payer, Person } from '../../domain'
 import { RecipientConfirmation } from './RecipientConfirmation'
@@ -21,5 +21,17 @@ describe('RecipientConfirmation', () => {
     render(<RecipientConfirmation payers={[juliana]} people={[withoutEmail]} onChange={vi.fn()} onBack={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: /alterar destinatário/i }))
     expect(screen.getByRole('radio', { name: /sem e-mail/i }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('pesquisa todo o cadastro somente após a ação explícita', async () => {
+    const remotePerson: Person = { ...deborah, id: '10000000-0000-0000-0000-000000000004', name: 'Pessoa Remota', role: 'Adicionado' }
+    const onSearchDirectory = vi.fn().mockResolvedValue({ people: [remotePerson] })
+    render(<RecipientConfirmation payers={[juliana]} people={[juliana, deborah]} onChange={vi.fn()} onBack={vi.fn()} onSearchDirectory={onSearchDirectory} />)
+    fireEvent.click(screen.getByRole('button', { name: /alterar destinatário/i }))
+    expect(onSearchDirectory).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /adicionar do cadastro/i }))
+    fireEvent.change(screen.getByRole('textbox', { name: /buscar destinatário/i }), { target: { value: 'Pessoa' } })
+    await waitFor(() => expect(onSearchDirectory).toHaveBeenCalledWith('Pessoa'))
+    expect(await screen.findByRole('radio', { name: /pessoa remota/i })).toBeTruthy()
   })
 })

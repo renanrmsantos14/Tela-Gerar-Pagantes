@@ -19,6 +19,13 @@ export interface Person {
   role: 'Solicitante' | 'Passageiro' | 'Adicionado'
 }
 
+export interface PersonSearchPage {
+  people: Person[]
+  nextLink?: string
+}
+
+export type PersonSearch = (query: string, nextLink?: string) => Promise<PersonSearchPage>
+
 export interface Payer extends Person {
   existingPayerId?: Guid
   paymentStatus?: string

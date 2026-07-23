@@ -1,5 +1,5 @@
 import { demoOperation } from './demo'
-import type { Guid, OperationData, Payer, Person, SubmitRequest, SubmitResult } from './domain'
+import type { Guid, OperationData, Payer, Person, PersonSearchPage, SubmitRequest, SubmitResult } from './domain'
 
 interface RetrieveResult { entities: Array<Record<string, unknown>>; nextLink?: string }
 
@@ -110,6 +110,26 @@ function toPerson(row: Record<string, unknown>, role: Person['role']): Person {
   }
 }
 
+export async function searchDirectoryPeople(query: string, nextLink?: string): Promise<PersonSearchPage> {
+  const normalized = query.trim()
+  if (normalized.length < 2) return { people: [] }
+  const api = getXrm()?.WebApi
+  if (!api) {
+    const needle = normalized.toLocaleLowerCase('pt-BR')
+    return {
+      people: demoOperation.directory
+        .filter((person) => `${person.name} ${person.email}`.toLocaleLowerCase('pt-BR').includes(needle))
+        .slice(0, 20)
+        .map((person) => ({ ...person, role: 'Adicionado' }))
+    }
+  }
+  const escaped = encodeURIComponent(normalized.replace(/'/g, "''")).replace(/'/g, '%27')
+  const filter = `statecode eq 0 and (contains(cr40f_nomedopassageiro,'${escaped}') or contains(cr40f_email,'${escaped}'))`
+  const options = nextLink ?? `?$select=cr40f_bancodedadosid,cr40f_nomedopassageiro,cr40f_email,cr40f_telefone&$filter=${filter}&$orderby=cr40f_nomedopassageiro asc&$top=20`
+  const page = await api.retrieveMultipleRecords('cr40f_bancodedados', options)
+  return { people: page.entities.map((row) => toPerson(row, 'Adicionado')), nextLink: page.nextLink }
+}
+
 function toPayer(row: Record<string, unknown>, people: Map<Guid, Person>): Payer | null {
   const personId = lookup(row, '_cr40f_bancodedados_value')
   const person = personId ? people.get(personId) : undefined
@@ -148,17 +168,22 @@ export async function loadOperation(recordId: Guid): Promise<OperationData> {
   if (!serviceIds.length) throw new Error('Esta OP não possui serviços vinculados.')
   const serviceFilter = serviceIds.map((id) => `_cr40f_servicorelacionadogeral_value eq ${id}`).join(' or ')
   const passengerFilter = serviceIds.map((id) => `_cr40f_geral_value eq ${id}`).join(' or ')
-  const [compositions, servicePassengers, existingRows, directoryRows] = await Promise.all([
+  const [compositions, servicePassengers, existingRows] = await Promise.all([
     fetchAll('cr40f_composicaodeprecos', `?$select=new_valortotal&$filter=${serviceFilter}`),
     fetchAll('cr40f_servicosporpassageiro', `?$select=_cr40f_bancodedados_value&$filter=${passengerFilter}`),
-    fetchExistingPayers(recordId),
-    fetchAll('cr40f_bancodedados', '?$select=cr40f_bancodedadosid,cr40f_nomedopassageiro,cr40f_email,cr40f_telefone&$orderby=cr40f_nomedopassageiro asc')
+    fetchExistingPayers(recordId)
   ])
   const totalCents = Math.round(compositions.reduce((sum, row) => sum + Number(row.new_valortotal ?? 0), 0) * 100)
   const serviceDates = services.map((service) => ({ timestamp: Date.parse(text(service, 'cr40f_dataehorriodesada')), date: toBrazilDateOnly(service.cr40f_dataehorriodesada) })).filter((service): service is { timestamp: number; date: string } => Boolean(service.date) && !Number.isNaN(service.timestamp)).sort((left, right) => left.timestamp - right.timestamp)
   const requesterIds = services.map((service) => lookup(service, '_cr40f_solicitante_value')).filter((id): id is string => Boolean(id))
   const passengerIds = servicePassengers.map((row) => lookup(row, '_cr40f_bancodedados_value')).filter((id): id is string => Boolean(id))
   const involvedIds = new Set([...requesterIds, ...passengerIds])
+  const payerIds = existingRows.map((row) => lookup(row, '_cr40f_bancodedados_value')).filter((id): id is string => Boolean(id))
+  const requiredPersonIds = [...new Set([...involvedIds, ...payerIds])]
+  const personFilter = requiredPersonIds.map((id) => `cr40f_bancodedadosid eq ${id}`).join(' or ')
+  const directoryRows = requiredPersonIds.length
+    ? await fetchAll('cr40f_bancodedados', `?$select=cr40f_bancodedadosid,cr40f_nomedopassageiro,cr40f_email,cr40f_telefone&$filter=statecode eq 0 and (${personFilter})&$orderby=cr40f_nomedopassageiro asc`)
+    : []
   const requesterSet = new Set(requesterIds)
   const directory = directoryRows.map((row) => toPerson(row, requesterSet.has(text(row, 'cr40f_bancodedadosid')) ? 'Solicitante' : involvedIds.has(text(row, 'cr40f_bancodedadosid')) ? 'Passageiro' : 'Adicionado'))
   const people = directory.filter((person) => involvedIds.has(person.id))

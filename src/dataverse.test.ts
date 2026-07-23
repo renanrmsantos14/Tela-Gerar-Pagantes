@@ -83,3 +83,63 @@ describe('submitOperation', () => {
     }))
   })
 })
+
+describe('searchDirectoryPeople', () => {
+  it('consulta o Dataverse por nome ou e-mail sem carregar o diretório inteiro', async () => {
+    const retrieveMultipleRecords = vi.fn().mockResolvedValue({
+      entities: [{
+        cr40f_bancodedadosid: paganteId,
+        cr40f_nomedopassageiro: 'Pessoa Encontrada',
+        cr40f_email: 'pessoa@example.com',
+        cr40f_telefone: '11999999999'
+      }],
+      nextLink: 'next-page'
+    })
+    window.Xrm = {
+      WebApi: {
+        retrieveRecord: vi.fn(),
+        retrieveMultipleRecords,
+        createRecord: vi.fn(),
+        updateRecord: vi.fn(),
+        deleteRecord: vi.fn()
+      }
+    }
+    const { searchDirectoryPeople } = await import('./dataverse')
+
+    await expect(searchDirectoryPeople('Pessoa')).resolves.toEqual({
+      people: [{ id: paganteId, name: 'Pessoa Encontrada', email: 'pessoa@example.com', phone: '11999999999', role: 'Adicionado' }],
+      nextLink: 'next-page'
+    })
+    expect(retrieveMultipleRecords).toHaveBeenCalledWith('cr40f_bancodedados', expect.stringContaining("contains(cr40f_nomedopassageiro,'Pessoa')"))
+    expect(retrieveMultipleRecords).toHaveBeenCalledWith('cr40f_bancodedados', expect.stringContaining("contains(cr40f_email,'Pessoa')"))
+    expect(retrieveMultipleRecords).toHaveBeenCalledWith('cr40f_bancodedados', expect.stringContaining('$top=20'))
+  })
+})
+
+describe('loadOperation', () => {
+  it('carrega somente pessoas vinculadas à OP em vez do cadastro inteiro', async () => {
+    const serviceId = '50000000-0000-0000-0000-000000000001'
+    const retrieveMultipleRecords = vi.fn()
+      .mockResolvedValueOnce({ entities: [{ cr40f_reservadeveculosid: serviceId, _cr40f_solicitante_value: paganteId, cr40f_dataehorriodesada: '2026-07-23T12:00:00Z' }] })
+      .mockResolvedValueOnce({ entities: [{ new_valortotal: 125 }] })
+      .mockResolvedValueOnce({ entities: [] })
+      .mockResolvedValueOnce({ entities: [] })
+      .mockResolvedValueOnce({ entities: [{ cr40f_bancodedadosid: paganteId, cr40f_nomedopassageiro: 'Pagante', cr40f_email: 'pagante@example.com', cr40f_telefone: '' }] })
+    window.Xrm = {
+      WebApi: {
+        retrieveRecord: vi.fn().mockResolvedValue({ cr40f_idfinanceiro: 'OP-123', versionnumber: '10', statecode: 0, statuscode: 1 }),
+        retrieveMultipleRecords,
+        createRecord: vi.fn(),
+        updateRecord: vi.fn(),
+        deleteRecord: vi.fn()
+      }
+    }
+    const { loadOperation } = await import('./dataverse')
+
+    const operation = await loadOperation(financeiroId)
+    expect(operation.people).toHaveLength(1)
+    const directoryCall = retrieveMultipleRecords.mock.calls.find(([entity]) => entity === 'cr40f_bancodedados')
+    expect(directoryCall?.[1]).toContain(`cr40f_bancodedadosid eq ${paganteId}`)
+    expect(directoryCall?.[1]).toContain('statecode eq 0')
+  })
+})

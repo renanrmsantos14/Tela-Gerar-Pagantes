@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { OperationData, Payer, Person } from '../domain'
-import { getRecordIdFromLocation, loadOperation, submitOperation } from '../dataverse'
+import { getRecordIdFromLocation, loadOperation, searchDirectoryPeople, submitOperation } from '../dataverse'
 import { logAppError } from '../errorLogger'
 import { formatCurrency, splitEvenly } from '../money'
 import { AllocationSummary } from './components/AllocationSummary'
@@ -187,12 +187,12 @@ export function App() {
       <AllocationSummary totalCents={operation.totalCents} allocatedCents={totalRateado} remainingCents={remaining} />
       <PeopleSelector people={involvedPeople} selectedIds={selectedIds} query={query} collapsed={selectionComplete} onQueryChange={setQuery} onToggle={togglePerson} onAddExternal={() => setExternalOpen(true)} onSplit={() => rebalance(payers)} onContinue={() => setSelectionComplete(true)} onEdit={() => setSelectionComplete(false)} />
       {selectionComplete && !recipientsConfirmed ? <PayerList payers={payers} onChange={updatePayer} invalidAmountIds={invalidAmountIds} warnings={warnings} onAmountValidityChange={updateAmountValidity} onEditSelection={() => { setSaved(false); setDirty(true); setRecipientsConfirmed(false); setSelectionComplete(false) }} /> : null}
-      {selectionComplete && recipientsConfirmed ? <RecipientConfirmation payers={payers} people={operation.people} onChange={updateRecipient} onBack={() => setRecipientsConfirmed(false)} /> : null}
+      {selectionComplete && recipientsConfirmed ? <RecipientConfirmation payers={payers} people={operation.people} onChange={updateRecipient} onBack={() => setRecipientsConfirmed(false)} onSearchDirectory={searchDirectoryPeople} /> : null}
       {attemptedSave && errors.length ? <div className="validation-panel" role="alert"><strong>Revise antes de continuar</strong><ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul></div> : null}
     </div>
     <StickyActionBar version={appVersion} hint={actionHint} ready={selectionComplete} saving={saving} completed={saved} confirm={false} label={!recipientsConfirmed && deliveryPayers.length ? 'Confirmar destinatários' : undefined} onSave={() => void save()} />
     {successFeedback ? <SuccessFeedback text={successFeedback} /> : null}
-    <ExternalPayerDialog open={externalOpen} people={operation.directory} selectedIds={selectedIds} query={externalQuery} onQueryChange={setExternalQuery} onClose={() => setExternalOpen(false)} onSelect={addExternal} />
+    <ExternalPayerDialog open={externalOpen} selectedIds={selectedIds} query={externalQuery} onQueryChange={setExternalQuery} onClose={() => setExternalOpen(false)} onSelect={addExternal} onSearch={searchDirectoryPeople} />
     <StatusConfirmationDialog open={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={() => void executeSave()} />
     <ExistingPayersDialog payers={operation.payers} open={existingPayersOpen} onReview={() => setExistingPayersOpen(false)} onReplace={() => { setExistingPayersOpen(false); setReplaceExisting(true); void executeSave(true) }} />
     <AllocationMismatchDialog open={mismatchOpen} operationTotal={operation.totalCents} allocatedTotal={totalRateado} onClose={() => setMismatchOpen(false)} onContinue={() => { setMismatchOpen(false); void save(true) }} />
