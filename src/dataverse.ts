@@ -11,7 +11,6 @@ interface XrmApi {
     createRecord: (entity: string, data: Record<string, unknown>) => Promise<{ id: string }>
     updateRecord: (entity: string, id: string, data: Record<string, unknown>) => Promise<void>
     deleteRecord: (entity: string, id: string) => Promise<void>
-    execute?: (request: Record<string, unknown>) => Promise<{ ok: boolean; json: () => Promise<Record<string, unknown>> }>
   }
   Utility?: { getGlobalContext?: () => { userSettings?: { userId?: string; userName?: string } } }
 }
@@ -62,36 +61,6 @@ function assertOperationEditable(finance: Record<string, unknown>): void {
   const statusLabel = text(finance, 'statuscode@OData.Community.Display.V1.FormattedValue')
   if (stateCode === 1 || /cancel|encerr|fechad/i.test(statusLabel)) {
     throw new Error(`A OP está ${statusLabel || 'inativa'} e não pode gerar pagantes.`)
-  }
-}
-
-async function assertOperationWriteAccess(financeiroId: Guid, finance: Record<string, unknown>): Promise<void> {
-  const api = getXrm()?.WebApi
-  if (!api) return
-  const operator = currentOperator()
-  if (api.execute && operator.id) {
-    const response = await api.execute({
-      Target: { entityType: 'cr40f_financeiro', id: financeiroId },
-      Principal: { entityType: 'systemuser', id: operator.id },
-      getMetadata: () => ({
-        boundParameter: null,
-        operationType: 1,
-        operationName: 'RetrievePrincipalAccess',
-        parameterTypes: {
-          Target: { typeName: 'mscrm.crmbaseentity', structuralProperty: 5 },
-          Principal: { typeName: 'mscrm.crmbaseentity', structuralProperty: 5 }
-        }
-      })
-    })
-    const body = await response.json()
-    const access = body.AccessRights
-    const hasWriteAccess = typeof access === 'number' ? (access & 2) === 2 : /(^|[, ])WriteAccess([, ]|$)/i.test(String(access ?? ''))
-    if (!hasWriteAccess) throw new Error('Você não possui permissão de gravação nesta OP.')
-    return
-  }
-  const ownerId = lookup(finance, '_ownerid_value')
-  if (ownerId && operator.id && ownerId.toLowerCase() !== operator.id.toLowerCase()) {
-    throw new Error('Você não possui permissão de gravação nesta OP.')
   }
 }
 
@@ -183,7 +152,6 @@ export async function loadOperation(recordId: Guid): Promise<OperationData> {
   const api = xrm.WebApi
   const finance = await api.retrieveRecord('cr40f_financeiro', recordId, '?$select=cr40f_idfinanceiro,versionnumber,statecode,statuscode,_ownerid_value')
   assertOperationEditable(finance)
-  await assertOperationWriteAccess(recordId, finance)
   const services = await fetchAll('cr40f_reservadeveculos', `?$select=cr40f_reservadeveculosid,_cr40f_solicitante_value&$filter=_cr40f_financeiro_value eq ${recordId}`)
   const serviceIds = services.map((service) => text(service, 'cr40f_reservadeveculosid')).filter(Boolean)
   if (!serviceIds.length) throw new Error('Esta OP nao possui servicos vinculados.')
@@ -258,7 +226,6 @@ export async function submitOperation(financeiroId: Guid, request: SubmitRequest
 
   const finance = await api.retrieveRecord('cr40f_financeiro', financeiroId, '?$select=versionnumber,statecode,statuscode,_ownerid_value')
   assertOperationEditable(finance)
-  await assertOperationWriteAccess(financeiroId, finance)
   if (text(finance, 'versionnumber') !== request.expectedFinanceiroVersion) throw new Error('A OP foi alterada por outro usuario. Atualize a tela e tente novamente.')
   const freshTotalCents = await fetchOperationTotal(financeiroId)
   if (freshTotalCents !== request.totalCents) throw new Error('O valor da OP mudou. Atualize os dados antes de salvar.')
