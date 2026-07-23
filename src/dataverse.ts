@@ -359,7 +359,7 @@ async function validateBeforeWrite(financeiroId: Guid, request: SubmitRequest, e
   const payerIds = new Set(request.pagantes.map((payer) => payer.paganteId))
   if (payerIds.size !== request.pagantes.length) throw new Error('Existem pagantes duplicados no rateio.')
   if (request.pagantes.some((payer) => !guidPattern.test(payer.paganteId) || !Number.isInteger(payer.amountCents) || payer.amountCents <= 0 || !paymentMethods.has(payer.paymentMethod))) throw new Error('O rateio possui pagante, valor ou forma de pagamento inválidos.')
-  if (request.pagantes.some((payer) => payer.sendEmail && (!payer.generateLink || !/^\S+@\S+\.\S+$/.test(payer.email.trim())))) throw new Error('Envio de e-mail exige link e e-mail válido para cada pagante.')
+  if (request.pagantes.some((payer) => payer.sendEmail && (!payer.generateLink || !guidPattern.test(payer.recipientId ?? '') || !payer.recipientName?.trim() || !/^\S+@\S+\.\S+$/.test(payer.recipientEmail?.trim() ?? '')))) throw new Error('Envio de e-mail exige destinatário selecionado e e-mail válido para cada pagante.')
   const people = await fetchAll('cr40f_bancodedados', `?$select=cr40f_bancodedadosid,cr40f_nomedopassageiro,cr40f_email,cr40f_status&$filter=${Array.from(payerIds).map((id) => `cr40f_bancodedadosid eq ${id}`).join(' or ')}`)
   const peopleById = new Map(people.map((row) => [text(row, 'cr40f_bancodedadosid'), row]))
   if (peopleById.size !== payerIds.size || people.some((row) => Number(row.cr40f_status) === 202410001)) throw new Error('Um dos pagantes não existe ou está inativo no Dataverse. Atualize a tela.')
@@ -423,6 +423,9 @@ async function startGerarPagantesFlow(url: string, financeiroId: Guid, request: 
       paganteId: payer.paganteId,
       name: payer.name,
       email: payer.email,
+      recipientId: payer.recipientId,
+      recipientName: payer.recipientName,
+      recipientEmail: payer.recipientEmail,
       amountCents: payer.amountCents,
       paymentMethod: payer.paymentMethod,
       generateLink: payer.generateLink,

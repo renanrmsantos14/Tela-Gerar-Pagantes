@@ -26,6 +26,9 @@ export interface Payer extends Person {
   paymentMethod: PaymentMethod
   generateLink: boolean
   sendEmail: boolean
+  recipientId?: Guid
+  recipientName?: string
+  recipientEmail?: string
   paymentUrl?: string
   linkStatus: LinkStatus
   emailStatus: EmailStatus
@@ -63,6 +66,9 @@ export interface SubmitRequest {
     existingPaganteId?: Guid
     name: string
     email: string
+    recipientId?: Guid
+    recipientName?: string
+    recipientEmail?: string
     amountCents: number
     paymentMethod: PaymentMethod
     generateLink: boolean

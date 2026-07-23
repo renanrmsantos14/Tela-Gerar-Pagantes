@@ -17,13 +17,18 @@ public sealed class GerarPagantesPlugin : IPlugin
     private const string Servico = "cr40f_reservadeveculos";
     private const string Operacao = "cr40f_geracaopagantesoperacao";
     private const string Limpeza = "cr40f_cielolinkcleanup";
-    private readonly string _clientId;
-    private readonly string _clientSecret;
+    private const int NotApplicable = 202410000;
+    private const int Pending = 202410001;
+    private const int Completed = 202410002;
+    private const int Failed = 202410003;
+    private static readonly HashSet<int> PaymentMethods = new() { 202410000, 202410001, 202410002 };
+    private readonly PluginSettings _settings;
+
+    public GerarPagantesPlugin() : this(string.Empty, string.Empty) { }
 
     public GerarPagantesPlugin(string unsecureConfiguration, string secureConfiguration)
     {
-        _clientId = unsecureConfiguration ?? string.Empty;
-        _clientSecret = secureConfiguration ?? string.Empty;
+        _settings = PluginSettings.Parse(unsecureConfiguration ?? string.Empty, secureConfiguration ?? string.Empty);
     }
 
     public void Execute(IServiceProvider serviceProvider)
@@ -42,6 +47,7 @@ public sealed class GerarPagantesPlugin : IPlugin
             response.FinanceiroId = target.Id;
             if (request.RequestId == Guid.Empty) throw new InvalidPluginExecutionException("requestId é obrigatório.");
             if (IsProcessed(service, request.RequestId)) throw new InvalidPluginExecutionException("Esta solicitação já foi processada.");
+            _settings.ValidateFor(request);
             var finance = service.Retrieve(Financeiro, target.Id, new ColumnSet("versionnumber", "cr40f_id", "statecode", "statuscode", "ownerid"));
             ValidateOperationAccess(service, context, finance);
             ValidateVersion(finance, request.ExpectedFinanceiroVersion);
@@ -50,20 +56,35 @@ public sealed class GerarPagantesPlugin : IPlugin
             response.TotalCents = totalCents;
             var existing = LoadExistingPayers(service, target.Id);
             ValidateExistingPayload(request, existing);
-            var cielo = new CieloClient(_clientId, _clientSecret);
+            var needsCielo = request.Pagantes.Any(payer => payer.GenerateLink) ||
+                existing.Values.Any(row => !string.IsNullOrWhiteSpace(row.GetAttributeValue<string>("cr40f_cielolinkid")));
+            var cielo = needsCielo ? new CieloClient(_settings.CieloClientId, _settings.CieloClientSecret) : null;
+            var graph = request.Pagantes.Any(payer => payer.SendEmail) ? new GraphEmailClient(_settings) : null;
+            var renderer = graph != null ? new PaymentEmailRenderer() : null;
+            var emailAssets = graph != null ? new EmailAssetProvider(service, _settings.EmailAssetPrefix).Load() : null;
             var createdLinks = new List<string>();
             try
             {
-                if (request.ReplaceExisting) DeleteReplacedPayers(service, cielo, existing);
+                if (request.ReplaceExisting) DeleteRemovedPayers(service, cielo, existing, Array.Empty<Guid>());
+                else DeleteRemovedPayers(service, cielo, existing, request.Pagantes
+                    .Select(payer => payer.ExistingPaganteId)
+                    .Where(id => id.HasValue)
+                    .Select(id => id!.Value));
                 foreach (var payer in request.Pagantes)
                 {
-                    var existingPayer = payer.ExistingPaganteId.HasValue && existing.TryGetValue(payer.ExistingPaganteId.Value, out var row) ? row : null;
-                    var result = UpsertPayer(service, cielo, finance, target.Id, payer, existingPayer, request.RequestId, createdLinks);
+                    var existingPayer = !request.ReplaceExisting && payer.ExistingPaganteId.HasValue &&
+                        existing.TryGetValue(payer.ExistingPaganteId.Value, out var row) ? row : null;
+                    var result = UpsertPayer(service, cielo, graph, renderer, emailAssets, target.Id, request, payer,
+                        existingPayer, request.RequestId, createdLinks);
                     response.Results.Add(result);
+                    if (!string.IsNullOrWhiteSpace(result.Error))
+                    {
+                        response.Errors.Add(new ApiError { Code = "PAYER_PROCESSING_FAILED", Message = result.Error!, PaganteId = payer.PaganteId });
+                        logWriter.TryWritePayerError(context, target.Id, result.PagantesRecordId, payer.PaganteId, result.Error!);
+                    }
                 }
-                if (!request.ReplaceExisting) QueueRemovedPayers(service, existing, request.Pagantes.Select(p => p.ExistingPaganteId).Where(id => id.HasValue).Select(id => id!.Value));
-                WriteOperation(service, request.RequestId, target.Id, true, response);
-                response.Success = true;
+                response.Success = response.Errors.Count == 0;
+                WriteOperation(service, request.RequestId, target.Id, response.Success, response);
             }
             catch (Exception operationError)
             {
@@ -111,14 +132,15 @@ public sealed class GerarPagantesPlugin : IPlugin
         if (!request.Pagantes.Any()) throw new InvalidPluginExecutionException("Selecione ao menos um pagante.");
         if (request.Pagantes.GroupBy(p => p.PaganteId).Any(group => group.Key == Guid.Empty || group.Count() > 1)) throw new InvalidPluginExecutionException("Existem pagantes inválidos ou duplicados.");
         if (request.Pagantes.Any(p => p.AmountCents <= 0)) throw new InvalidPluginExecutionException("Todos os pagantes devem possuir valor maior que zero.");
-        if (request.Pagantes.Any(p => p.SendEmail && (!p.GenerateLink || !System.Text.RegularExpressions.Regex.IsMatch(p.Email?.Trim() ?? "", @"^\S+@\S+\.\S+$")))) throw new InvalidPluginExecutionException("Email requires link and valid email.");
+        if (request.Pagantes.Any(p => p.SendEmail && (!p.GenerateLink || p.RecipientId == Guid.Empty || string.IsNullOrWhiteSpace(p.RecipientName) || !System.Text.RegularExpressions.Regex.IsMatch(p.RecipientEmail?.Trim() ?? "", @"^\S+@\S+\.\S+$")))) throw new InvalidPluginExecutionException("Email requires link and valid recipient email.");
         if (request.Pagantes.Sum(p => p.AmountCents) != totalCents && !request.AllowTotalMismatch) throw new InvalidPluginExecutionException("O total do rateio diverge do valor da OP.");
-        var ids = request.Pagantes.Select(p => p.PaganteId).ToArray();
+        var ids = request.Pagantes.Select(p => p.PaganteId).Concat(request.Pagantes.Where(p => p.SendEmail).Select(p => p.RecipientId)).Distinct().ToArray();
         var people = service.RetrieveMultiple(new QueryExpression("cr40f_bancodedados") { ColumnSet = new ColumnSet("cr40f_nomedopassageiro", "cr40f_email", "cr40f_status"), Criteria = new FilterExpression(LogicalOperator.And) { Conditions = { new ConditionExpression("cr40f_bancodedadosid", ConditionOperator.In, ids.Cast<object>().ToArray()) } } }).Entities.ToDictionary(p => p.Id);
         foreach (var payer in request.Pagantes)
         {
             if (!people.TryGetValue(payer.PaganteId, out var person) || person.GetAttributeValue<OptionSetValue>("cr40f_status")?.Value == 202410001) throw new InvalidPluginExecutionException("Payer does not exist or is inactive.");
             if (!string.Equals(person.GetAttributeValue<string>("cr40f_nomedopassageiro")?.Trim(), payer.Name?.Trim(), StringComparison.Ordinal) || !string.Equals(person.GetAttributeValue<string>("cr40f_email")?.Trim(), payer.Email?.Trim(), StringComparison.OrdinalIgnoreCase)) throw new InvalidPluginExecutionException("Payer data differs from Dataverse.");
+            if (payer.SendEmail && (!people.TryGetValue(payer.RecipientId, out var recipient) || recipient.GetAttributeValue<OptionSetValue>("cr40f_status")?.Value == 202410001 || !string.Equals(recipient.GetAttributeValue<string>("cr40f_nomedopassageiro")?.Trim(), payer.RecipientName?.Trim(), StringComparison.Ordinal) || !string.Equals(recipient.GetAttributeValue<string>("cr40f_email")?.Trim(), payer.RecipientEmail?.Trim(), StringComparison.OrdinalIgnoreCase))) throw new InvalidPluginExecutionException("Recipient data differs from Dataverse.");
         }
     }
 

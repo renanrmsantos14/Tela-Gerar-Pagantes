@@ -7,6 +7,9 @@ public sealed class GerarPagantesRequest
 {
     public Guid RequestId { get; set; }
     public string ExpectedFinanceiroVersion { get; set; } = string.Empty;
+    public string FinanceiroDisplayId { get; set; } = string.Empty;
+    public string? ServiceStartDate { get; set; }
+    public string? ServiceEndDate { get; set; }
     public bool AllowTotalMismatch { get; set; }
     public bool ReplaceExisting { get; set; }
     public List<PaganteRequest> Pagantes { get; set; } = new();
@@ -18,6 +21,9 @@ public sealed class PaganteRequest
     public Guid? ExistingPaganteId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
+    public Guid RecipientId { get; set; }
+    public string RecipientName { get; set; } = string.Empty;
+    public string RecipientEmail { get; set; } = string.Empty;
     public int AmountCents { get; set; }
     public int PaymentMethod { get; set; }
     public bool GenerateLink { get; set; }
@@ -41,6 +47,7 @@ public sealed class PaganteResult
     public string LinkStatus { get; set; } = "NotApplicable";
     public string EmailStatus { get; set; } = "NotApplicable";
     public string? PaymentUrl { get; set; }
+    public string? Error { get; set; }
 }
 
 public sealed class ApiError

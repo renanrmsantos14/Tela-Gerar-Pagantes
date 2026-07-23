@@ -16,8 +16,8 @@ public sealed class CieloClient
 
     public CieloClient(string clientId, string clientSecret)
     {
-        _clientId = clientId ?? throw new ArgumentNullException(nameof(clientId));
-        _clientSecret = clientSecret ?? throw new ArgumentNullException(nameof(clientSecret));
+        _clientId = !string.IsNullOrWhiteSpace(clientId) ? clientId.Trim() : throw new ArgumentException("Client ID Cielo ausente.", nameof(clientId));
+        _clientSecret = !string.IsNullOrWhiteSpace(clientSecret) ? clientSecret.Trim() : throw new ArgumentException("Client Secret Cielo ausente.", nameof(clientSecret));
     }
 
     public async Task<CieloLink> CreateLinkAsync(string orderNumber, string name, string description, int amountCents)
@@ -69,8 +69,10 @@ public sealed class CieloClient
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Basic", basic);
         using var response = await Http.SendAsync(request).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        var token = JsonConvert.DeserializeObject<CieloToken>(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+        var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            throw new CieloException($"Cielo recusou a autenticação {(int)response.StatusCode}.", response.StatusCode, body);
+        var token = JsonConvert.DeserializeObject<CieloToken>(body);
         return token?.AccessToken ?? throw new InvalidOperationException("Token Cielo ausente.");
     }
 }

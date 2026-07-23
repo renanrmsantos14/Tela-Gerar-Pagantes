@@ -12,6 +12,7 @@ import { FeedbackNotice } from './components/FeedbackNotice'
 import { OperationHeader } from './components/OperationHeader'
 import { PayerList } from './components/PayerList'
 import { PeopleSelector } from './components/PeopleSelector'
+import { RecipientConfirmation } from './components/RecipientConfirmation'
 import { PopupShell } from './components/PopupShell'
 import { StatusConfirmationDialog } from './components/StatusConfirmationDialog'
 import { StickyActionBar } from './components/StickyActionBar'
@@ -26,7 +27,7 @@ const errorMessage = (error: unknown, fallback: string): string => {
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string' && error.message) return error.message
   return fallback
 }
-const makePayer = (person: Person, amountCents = 0): Payer => ({ ...person, amountCents, paymentMethod: 202410000, generateLink: true, sendEmail: emailValid(person.email), linkStatus: 'NotApplicable', emailStatus: 'NotApplicable' })
+const makePayer = (person: Person, amountCents = 0): Payer => ({ ...person, amountCents, paymentMethod: 202410000, generateLink: true, sendEmail: emailValid(person.email), recipientId: person.id, recipientName: person.name, recipientEmail: person.email, linkStatus: 'NotApplicable', emailStatus: 'NotApplicable' })
 
 export function App() {
   const [operation, setOperation] = useState<OperationData | null>(null)
@@ -43,6 +44,7 @@ export function App() {
   const [notice, setNotice] = useState<Notice>(null)
   const [attemptedSave, setAttemptedSave] = useState(false)
   const [selectionComplete, setSelectionComplete] = useState(false)
+  const [recipientsConfirmed, setRecipientsConfirmed] = useState(false)
   const [invalidAmountIds, setInvalidAmountIds] = useState<Set<string>>(new Set())
   const [dirty, setDirty] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -65,7 +67,7 @@ export function App() {
       const id = getRecordIdFromLocation()
       if (!id && window.Xrm?.WebApi) throw new Error('Nenhuma OP foi recebida pela tela.')
       const data = await loadOperation(id ?? '00000000-0000-0000-0000-000000000001')
-      setOperation(data); setPayers(data.payers); setSelectionComplete(data.payers.length > 0); setInvalidAmountIds(new Set()); setDirty(false)
+      setOperation(data); setPayers(data.payers.map((payer) => ({ ...payer, recipientId: payer.recipientId ?? payer.id, recipientName: payer.recipientName ?? payer.name, recipientEmail: payer.recipientEmail ?? payer.email }))); setSelectionComplete(data.payers.length > 0); setRecipientsConfirmed(false); setInvalidAmountIds(new Set()); setDirty(false)
       const failedLinks = data.payers.filter((payer) => payer.linkStatus === 'Failed')
       if (failedLinks.length) setNotice({ tone: 'error', text: `${failedLinks.length} link(s) de pagamento não foram gerados. Revise o Pagante e o histórico do Flow.` })
     } catch (error) {
@@ -87,6 +89,7 @@ export function App() {
   const remaining = (operation?.totalCents ?? 0) - totalRateado
   const selectedIds = useMemo(() => new Set(payers.map((payer) => payer.id)), [payers])
   const involvedPeople = useMemo(() => (operation?.people ?? []).filter((person) => `${person.name} ${person.email} ${person.role}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))), [operation, query])
+  const deliveryPayers = useMemo(() => payers.filter((payer) => payer.generateLink && payer.sendEmail), [payers])
   const errors = useMemo(() => {
     if (!operation) return []
     const messages: string[] = []
@@ -94,10 +97,10 @@ export function App() {
     if (payers.some((payer) => payer.amountCents <= 0)) messages.push('Todo pagante deve possuir valor maior que zero.')
     if (remaining > 0) messages.push(`Falta ratear ${formatCurrency(remaining)} para fechar o total da OP.`)
     if (remaining < 0) messages.push(`O rateio excede o total da OP em ${formatCurrency(Math.abs(remaining))}.`)
-    if (payers.some((payer) => payer.sendEmail && !emailValid(payer.email))) messages.push('Informe um e-mail válido para quem receberá o link de pagamento.')
+    if (recipientsConfirmed && deliveryPayers.some((payer) => !emailValid(payer.recipientEmail ?? payer.email))) messages.push('Selecione uma pessoa com e-mail válido para receber o link de pagamento.')
     if (invalidAmountIds.size) messages.push('Corrija os valores com mais de duas casas decimais.')
     return messages
-  }, [operation, payers, remaining, invalidAmountIds])
+  }, [operation, payers, remaining, invalidAmountIds, deliveryPayers, recipientsConfirmed])
 
   const warnings = useMemo(() => {
     const result = new Map<string, string>()
@@ -115,15 +118,17 @@ export function App() {
 
   function togglePerson(person: Person) {
     const next = payers.some((payer) => payer.id === person.id) ? payers.filter((payer) => payer.id !== person.id) : [...payers, makePayer(person)]
-    setSaved(false); setDirty(true); rebalance(next)
+    setSaved(false); setDirty(true); setRecipientsConfirmed(false); rebalance(next)
   }
 
   function addExternal(person: Person) {
     if (selectedIds.has(person.id)) return
-    setSaved(false); setDirty(true); rebalance([...payers, makePayer({ ...person, role: 'Adicionado' })]); setExternalOpen(false); setExternalQuery('')
+    setSaved(false); setDirty(true); setRecipientsConfirmed(false); rebalance([...payers, makePayer({ ...person, role: 'Adicionado' })]); setExternalOpen(false); setExternalQuery('')
   }
 
-  function updatePayer(id: string, change: Partial<Payer>) { setSaved(false); setDirty(true); setPayers((current) => current.map((payer) => payer.id === id ? { ...payer, ...change } : payer)) }
+  function updatePayer(id: string, change: Partial<Payer>) { setSaved(false); setDirty(true); setRecipientsConfirmed(false); setPayers((current) => current.map((payer) => payer.id === id ? { ...payer, ...change } : payer)) }
+
+  function updateRecipient(payerId: string, person: Person) { setSaved(false); setDirty(true); setPayers((current) => current.map((payer) => payer.id === payerId ? { ...payer, recipientId: person.id, recipientName: person.name, recipientEmail: person.email } : payer)) }
 
   function updateAmountValidity(id: string, invalid: boolean) {
     setInvalidAmountIds((current) => { const next = new Set(current); if (invalid) next.add(id); else next.delete(id); return next })
@@ -133,8 +138,9 @@ export function App() {
     setAttemptedSave(true)
     if (!operation || saving) return
     if (remaining !== 0 && !allowTotalMismatch) { setMismatchOpen(true); return }
-    const hasBlockingError = !payers.length || invalidAmountIds.size > 0 || payers.some((payer) => payer.amountCents <= 0 || payer.sendEmail && !emailValid(payer.email))
+    const hasBlockingError = !payers.length || invalidAmountIds.size > 0 || payers.some((payer) => payer.amountCents <= 0) || recipientsConfirmed && deliveryPayers.some((payer) => !emailValid(payer.recipientEmail ?? payer.email))
     if (hasBlockingError) return
+    if (deliveryPayers.length && !recipientsConfirmed) { setRecipientsConfirmed(true); return }
     if (operation.payers.length > 0 && !replaceExisting) { setExistingPayersOpen(true); return }
     const risky = payers.some((payer) => payer.existingPayerId && payer.paymentStatus && payer.paymentStatus !== 'Pendente')
     if (risky) { setConfirmOpen(true); return }
@@ -145,7 +151,7 @@ export function App() {
     if (!operation) return
     setSaving(true); setNotice(null); setSuccessFeedback(null); setBlockingError(null)
     try {
-       const result = await submitOperation(operation.id, { requestId: crypto.randomUUID(), expectedFinanceiroVersion: operation.version, financeiroDisplayId: operation.displayId, totalCents: operation.totalCents, allowTotalMismatch: remaining !== 0, replaceExisting: forceReplace, serviceStartDate: operation.serviceStartDate, serviceEndDate: operation.serviceEndDate, pagantes: payers.map((payer) => ({ paganteId: payer.id, existingPaganteId: forceReplace ? undefined : payer.existingPayerId, name: payer.name, email: payer.email, amountCents: payer.amountCents, paymentMethod: payer.paymentMethod, generateLink: payer.generateLink, sendEmail: payer.sendEmail })) })
+       const result = await submitOperation(operation.id, { requestId: crypto.randomUUID(), expectedFinanceiroVersion: operation.version, financeiroDisplayId: operation.displayId, totalCents: operation.totalCents, allowTotalMismatch: remaining !== 0, replaceExisting: forceReplace, serviceStartDate: operation.serviceStartDate, serviceEndDate: operation.serviceEndDate, pagantes: payers.map((payer) => ({ paganteId: payer.id, existingPaganteId: forceReplace ? undefined : payer.existingPayerId, name: payer.name, email: payer.email, recipientId: payer.recipientId ?? payer.id, recipientName: payer.recipientName ?? payer.name, recipientEmail: payer.recipientEmail ?? payer.email, amountCents: payer.amountCents, paymentMethod: payer.paymentMethod, generateLink: payer.generateLink, sendEmail: payer.sendEmail })) })
       if (!result.success) {
         const detail = result.errors.map((error) => error.message).join(' ') || 'O processamento não foi concluído.'
         throw new Error(`Pagantes gravados, mas a geração foi interrompida. ${detail} Corrija o erro e tente novamente.`)
@@ -172,7 +178,7 @@ export function App() {
   if (loading) return <div className="state-screen"><div className="skeleton skeleton--title" /><div className="skeleton skeleton--panel" /><small>{appVersion}</small></div>
   if (!operation) return <div className="state-screen"><strong>Não foi possível abrir esta OP.</strong>{notice ? <FeedbackNotice {...notice} /> : null}<button className="ui-button ui-button--secondary" onClick={() => void refresh()}>Tentar novamente</button><small>{appVersion}</small></div>
 
-  const actionHint = saved ? 'Geração concluída' : !selectionComplete ? 'Escolha os pagantes e avance' : remaining !== 0 ? 'Rateio divergente: revise os valores' : errors.length ? 'Revise os campos pendentes' : 'Rateio pronto para gerar'
+  const actionHint = saved ? 'Geração concluída' : !selectionComplete ? 'Escolha os pagantes e avance' : remaining !== 0 ? 'Rateio divergente: revise os valores' : errors.length ? 'Revise os campos pendentes' : !recipientsConfirmed && deliveryPayers.length ? 'Confirme quem receberá cada link' : 'Rateio pronto para gerar'
 
   return <PopupShell onBackdropClick={isEmbedded ? () => closeEmbedded(false) : undefined}>
     <div className="popup-content" ref={contentRef}>
@@ -180,10 +186,11 @@ export function App() {
       {notice ? <FeedbackNotice {...notice} /> : null}
       <AllocationSummary totalCents={operation.totalCents} allocatedCents={totalRateado} remainingCents={remaining} />
       <PeopleSelector people={involvedPeople} selectedIds={selectedIds} query={query} collapsed={selectionComplete} onQueryChange={setQuery} onToggle={togglePerson} onAddExternal={() => setExternalOpen(true)} onSplit={() => rebalance(payers)} onContinue={() => setSelectionComplete(true)} onEdit={() => setSelectionComplete(false)} />
-      {selectionComplete ? <PayerList payers={payers} onChange={updatePayer} invalidAmountIds={invalidAmountIds} warnings={warnings} onAmountValidityChange={updateAmountValidity} onEditSelection={() => { setSaved(false); setDirty(true); setSelectionComplete(false) }} /> : null}
+      {selectionComplete && !recipientsConfirmed ? <PayerList payers={payers} onChange={updatePayer} invalidAmountIds={invalidAmountIds} warnings={warnings} onAmountValidityChange={updateAmountValidity} onEditSelection={() => { setSaved(false); setDirty(true); setRecipientsConfirmed(false); setSelectionComplete(false) }} /> : null}
+      {selectionComplete && recipientsConfirmed ? <RecipientConfirmation payers={payers} people={operation.people} onChange={updateRecipient} onBack={() => setRecipientsConfirmed(false)} /> : null}
       {attemptedSave && errors.length ? <div className="validation-panel" role="alert"><strong>Revise antes de continuar</strong><ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul></div> : null}
     </div>
-    <StickyActionBar version={appVersion} hint={actionHint} ready={selectionComplete} saving={saving} completed={saved} confirm={false} onSave={() => void save()} />
+    <StickyActionBar version={appVersion} hint={actionHint} ready={selectionComplete} saving={saving} completed={saved} confirm={false} label={!recipientsConfirmed && deliveryPayers.length ? 'Confirmar destinatários' : undefined} onSave={() => void save()} />
     {successFeedback ? <SuccessFeedback text={successFeedback} /> : null}
     <ExternalPayerDialog open={externalOpen} people={operation.directory} selectedIds={selectedIds} query={externalQuery} onQueryChange={setExternalQuery} onClose={() => setExternalOpen(false)} onSelect={addExternal} />
     <StatusConfirmationDialog open={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={() => void executeSave()} />

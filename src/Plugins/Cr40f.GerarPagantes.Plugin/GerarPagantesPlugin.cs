@@ -17,13 +17,18 @@ public sealed class GerarPagantesPlugin : IPlugin
     private const string Servico = "cr40f_reservadeveculos";
     private const string Operacao = "cr40f_geracaopagantesoperacao";
     private const string Limpeza = "cr40f_cielolinkcleanup";
-    private readonly string _clientId;
-    private readonly string _clientSecret;
+    private const int NotApplicable = 202410000;
+    private const int Pending = 202410001;
+    private const int Completed = 202410002;
+    private const int Failed = 202410003;
+    private static readonly HashSet<int> PaymentMethods = new() { 202410000, 202410001, 202410002 };
+    private readonly PluginSettings _settings;
+
+    public GerarPagantesPlugin() : this(string.Empty, string.Empty) { }
 
     public GerarPagantesPlugin(string unsecureConfiguration, string secureConfiguration)
     {
-        _clientId = unsecureConfiguration ?? string.Empty;
-        _clientSecret = secureConfiguration ?? string.Empty;
+        _settings = PluginSettings.Parse(unsecureConfiguration ?? string.Empty, secureConfiguration ?? string.Empty);
     }
 
     public void Execute(IServiceProvider serviceProvider)
@@ -42,6 +47,7 @@ public sealed class GerarPagantesPlugin : IPlugin
             response.FinanceiroId = target.Id;
             if (request.RequestId == Guid.Empty) throw new InvalidPluginExecutionException("requestId é obrigatório.");
             if (IsProcessed(service, request.RequestId)) throw new InvalidPluginExecutionException("Esta solicitação já foi processada.");
+            _settings.ValidateFor(request);
             var finance = service.Retrieve(Financeiro, target.Id, new ColumnSet("versionnumber", "cr40f_id", "statecode", "statuscode", "ownerid"));
             ValidateOperationAccess(service, context, finance);
             ValidateVersion(finance, request.ExpectedFinanceiroVersion);
@@ -50,20 +56,35 @@ public sealed class GerarPagantesPlugin : IPlugin
             response.TotalCents = totalCents;
             var existing = LoadExistingPayers(service, target.Id);
             ValidateExistingPayload(request, existing);
-            var cielo = new CieloClient(_clientId, _clientSecret);
+            var needsCielo = request.Pagantes.Any(payer => payer.GenerateLink) ||
+                existing.Values.Any(row => !string.IsNullOrWhiteSpace(row.GetAttributeValue<string>("cr40f_cielolinkid")));
+            var cielo = needsCielo ? new CieloClient(_settings.CieloClientId, _settings.CieloClientSecret) : null;
+            var graph = request.Pagantes.Any(payer => payer.SendEmail) ? new GraphEmailClient(_settings) : null;
+            var renderer = graph != null ? new PaymentEmailRenderer() : null;
+            var emailAssets = graph != null ? new EmailAssetProvider(service, _settings.EmailAssetPrefix).Load() : null;
             var createdLinks = new List<string>();
             try
             {
-                if (request.ReplaceExisting) DeleteReplacedPayers(service, cielo, existing);
+                if (request.ReplaceExisting) DeleteRemovedPayers(service, cielo, existing, Array.Empty<Guid>());
+                else DeleteRemovedPayers(service, cielo, existing, request.Pagantes
+                    .Select(payer => payer.ExistingPaganteId)
+                    .Where(id => id.HasValue)
+                    .Select(id => id!.Value));
                 foreach (var payer in request.Pagantes)
                 {
-                    var existingPayer = payer.ExistingPaganteId.HasValue && existing.TryGetValue(payer.ExistingPaganteId.Value, out var row) ? row : null;
-                    var result = UpsertPayer(service, cielo, finance, target.Id, payer, existingPayer, request.RequestId, createdLinks);
+                    var existingPayer = !request.ReplaceExisting && payer.ExistingPaganteId.HasValue &&
+                        existing.TryGetValue(payer.ExistingPaganteId.Value, out var row) ? row : null;
+                    var result = UpsertPayer(service, cielo, graph, renderer, emailAssets, target.Id, request, payer,
+                        existingPayer, request.RequestId, createdLinks);
                     response.Results.Add(result);
+                    if (!string.IsNullOrWhiteSpace(result.Error))
+                    {
+                        response.Errors.Add(new ApiError { Code = "PAYER_PROCESSING_FAILED", Message = result.Error!, PaganteId = payer.PaganteId });
+                        logWriter.TryWritePayerError(context, target.Id, result.PagantesRecordId, payer.PaganteId, result.Error!);
+                    }
                 }
-                if (!request.ReplaceExisting) QueueRemovedPayers(service, existing, request.Pagantes.Select(p => p.ExistingPaganteId).Where(id => id.HasValue).Select(id => id!.Value));
-                WriteOperation(service, request.RequestId, target.Id, true, response);
-                response.Success = true;
+                response.Success = response.Errors.Count == 0;
+                WriteOperation(service, request.RequestId, target.Id, response.Success, response);
             }
             catch (Exception operationError)
             {
@@ -110,15 +131,16 @@ public sealed class GerarPagantesPlugin : IPlugin
     {
         if (!request.Pagantes.Any()) throw new InvalidPluginExecutionException("Selecione ao menos um pagante.");
         if (request.Pagantes.GroupBy(p => p.PaganteId).Any(group => group.Key == Guid.Empty || group.Count() > 1)) throw new InvalidPluginExecutionException("Existem pagantes inválidos ou duplicados.");
-        if (request.Pagantes.Any(p => p.AmountCents <= 0)) throw new InvalidPluginExecutionException("Todos os pagantes devem possuir valor maior que zero.");
-        if (request.Pagantes.Any(p => p.SendEmail && (!p.GenerateLink || !System.Text.RegularExpressions.Regex.IsMatch(p.Email?.Trim() ?? "", @"^\S+@\S+\.\S+$")))) throw new InvalidPluginExecutionException("Email requires link and valid email.");
+        if (request.Pagantes.Any(p => p.AmountCents <= 0 || !PaymentMethods.Contains(p.PaymentMethod))) throw new InvalidPluginExecutionException("Todos os pagantes devem possuir valor e forma de pagamento válidos.");
+        if (request.Pagantes.Any(p => p.SendEmail && (!p.GenerateLink || p.RecipientId == Guid.Empty || string.IsNullOrWhiteSpace(p.RecipientName) || !System.Text.RegularExpressions.Regex.IsMatch(p.RecipientEmail?.Trim() ?? "", @"^\S+@\S+\.\S+$")))) throw new InvalidPluginExecutionException("Envio de e-mail exige link e destinatário válido.");
         if (request.Pagantes.Sum(p => p.AmountCents) != totalCents && !request.AllowTotalMismatch) throw new InvalidPluginExecutionException("O total do rateio diverge do valor da OP.");
-        var ids = request.Pagantes.Select(p => p.PaganteId).ToArray();
+        var ids = request.Pagantes.Select(p => p.PaganteId).Concat(request.Pagantes.Where(p => p.SendEmail).Select(p => p.RecipientId)).Distinct().ToArray();
         var people = service.RetrieveMultiple(new QueryExpression("cr40f_bancodedados") { ColumnSet = new ColumnSet("cr40f_nomedopassageiro", "cr40f_email", "cr40f_status"), Criteria = new FilterExpression(LogicalOperator.And) { Conditions = { new ConditionExpression("cr40f_bancodedadosid", ConditionOperator.In, ids.Cast<object>().ToArray()) } } }).Entities.ToDictionary(p => p.Id);
         foreach (var payer in request.Pagantes)
         {
-            if (!people.TryGetValue(payer.PaganteId, out var person) || person.GetAttributeValue<OptionSetValue>("cr40f_status")?.Value == 202410001) throw new InvalidPluginExecutionException("Payer does not exist or is inactive.");
-            if (!string.Equals(person.GetAttributeValue<string>("cr40f_nomedopassageiro")?.Trim(), payer.Name?.Trim(), StringComparison.Ordinal) || !string.Equals(person.GetAttributeValue<string>("cr40f_email")?.Trim(), payer.Email?.Trim(), StringComparison.OrdinalIgnoreCase)) throw new InvalidPluginExecutionException("Payer data differs from Dataverse.");
+            if (!people.TryGetValue(payer.PaganteId, out var person) || person.GetAttributeValue<OptionSetValue>("cr40f_status")?.Value == Pending) throw new InvalidPluginExecutionException("Um pagante não existe ou está inativo.");
+            if (!string.Equals(person.GetAttributeValue<string>("cr40f_nomedopassageiro")?.Trim(), payer.Name?.Trim(), StringComparison.Ordinal) || !string.Equals(person.GetAttributeValue<string>("cr40f_email")?.Trim(), payer.Email?.Trim(), StringComparison.OrdinalIgnoreCase)) throw new InvalidPluginExecutionException("Os dados do pagante divergem do Dataverse.");
+            if (payer.SendEmail && (!people.TryGetValue(payer.RecipientId, out var recipient) || recipient.GetAttributeValue<OptionSetValue>("cr40f_status")?.Value == Pending || !string.Equals(recipient.GetAttributeValue<string>("cr40f_nomedopassageiro")?.Trim(), payer.RecipientName?.Trim(), StringComparison.Ordinal) || !string.Equals(recipient.GetAttributeValue<string>("cr40f_email")?.Trim(), payer.RecipientEmail?.Trim(), StringComparison.OrdinalIgnoreCase))) throw new InvalidPluginExecutionException("Os dados do destinatário divergem do Dataverse.");
         }
     }
 
@@ -135,7 +157,10 @@ public sealed class GerarPagantesPlugin : IPlugin
         foreach (var payer in request.Pagantes.Where(p => p.ExistingPaganteId.HasValue))
         {
             if (!existing.TryGetValue(payer.ExistingPaganteId!.Value, out var row) || row.GetAttributeValue<EntityReference>("cr40f_bancodedados")?.Id != payer.PaganteId) throw new InvalidPluginExecutionException("Existing payer record does not belong to this operation.");
+            if (IsLockedPayer(row)) throw new InvalidPluginExecutionException($"O pagante {payer.Name} já está pago ou autorizado e não pode ser alterado.");
         }
+        foreach (var removed in existing.Where(item => !request.Pagantes.Any(payer => payer.ExistingPaganteId == item.Key)).Select(item => item.Value))
+            if (IsLockedPayer(removed)) throw new InvalidPluginExecutionException("Um pagante pago ou autorizado não pode ser removido do rateio.");
     }
 
     private static int CalculateOperationTotal(IOrganizationService service, Guid financeiroId)
@@ -164,32 +189,44 @@ public sealed class GerarPagantesPlugin : IPlugin
 
     private static Dictionary<Guid, Entity> LoadExistingPayers(IOrganizationService service, Guid financeiroId) => service.RetrieveMultiple(new QueryExpression(Pagantes)
     {
-        ColumnSet = new ColumnSet("cr40f_bancodedados", "cr40f_valor", "cr40f_formadepagamento", "cr40f_cielolinkid", "cr40f_linkdepagamento"),
+        ColumnSet = new ColumnSet("cr40f_bancodedados", "cr40f_valor", "cr40f_formadepagamento", "cr40f_status", "cr40f_cielolinkid", "cr40f_cieloordernumber", "cr40f_linkdepagamento"),
         Criteria = new FilterExpression(LogicalOperator.And) { Conditions = { new ConditionExpression("cr40f_financeiro", ConditionOperator.Equal, financeiroId) } }
     }).Entities.ToDictionary(entity => entity.Id);
 
-    private PaganteResult UpsertPayer(IOrganizationService service, CieloClient cielo, Entity finance, Guid financeiroId, PaganteRequest payer, Entity? existing, Guid requestId, ICollection<string> createdLinks)
+    private PaganteResult UpsertPayer(
+        IOrganizationService service,
+        CieloClient? cielo,
+        GraphEmailClient? graph,
+        PaymentEmailRenderer? renderer,
+        IReadOnlyCollection<InlineEmailAsset>? emailAssets,
+        Guid financeiroId,
+        GerarPagantesRequest request,
+        PaganteRequest payer,
+        Entity? existing,
+        Guid requestId,
+        ICollection<string> createdLinks)
     {
         var changed = existing == null || existing.GetAttributeValue<EntityReference>("cr40f_bancodedados")?.Id != payer.PaganteId || Math.Round((existing.GetAttributeValue<Money>("cr40f_valor")?.Value ?? 0m) * 100m) != payer.AmountCents || existing.GetAttributeValue<OptionSetValue>("cr40f_formadepagamento")?.Value != payer.PaymentMethod;
+        var existingLinkId = existing?.GetAttributeValue<string>("cr40f_cielolinkid");
+        if (!string.IsNullOrWhiteSpace(existingLinkId) && (changed || !payer.GenerateLink))
+            throw new InvalidPluginExecutionException("Não é permitido alterar pagante com link Cielo ativo sem substituir o rateio.");
         var entity = existing ?? new Entity(Pagantes);
         entity["cr40f_financeiro"] = new EntityReference(Financeiro, financeiroId);
         entity["cr40f_bancodedados"] = new EntityReference("cr40f_bancodedados", payer.PaganteId);
         entity["cr40f_valor"] = new Money(payer.AmountCents / 100m);
         entity["cr40f_formadepagamento"] = new OptionSetValue(payer.PaymentMethod);
-        entity["cr40f_status"] = new OptionSetValue(202410001);
+        entity["cr40f_status"] = new OptionSetValue(Pending);
+        entity["cr40f_statusgeracaolink"] = new OptionSetValue(payer.GenerateLink ? Pending : NotApplicable);
+        entity["cr40f_statusenvioemail"] = new OptionSetValue(payer.SendEmail ? Pending : NotApplicable);
+        entity["cr40f_errogeracaolink"] = null;
+        entity["cr40f_erroenvioemail"] = null;
         var result = new PaganteResult { PaganteId = payer.PaganteId, LinkStatus = payer.GenerateLink ? "Pending" : "NotApplicable", EmailStatus = payer.SendEmail ? "Pending" : "NotApplicable" };
-        if (payer.GenerateLink && changed)
+        if (!payer.GenerateLink)
         {
-            var link = cielo.CreateLinkAsync(CreateOrderNumber(financeiroId, payer.PaganteId, requestId), "Serviço Betinhos", "Serviços de transporte executivo", payer.AmountCents).GetAwaiter().GetResult();
-            createdLinks.Add(link.Id!);
-            entity["cr40f_cielolinkid"] = link.Id;
-            entity["cr40f_linkdepagamento"] = link.ShortUrl;
-            entity["cr40f_cieloordernumber"] = CreateOrderNumber(financeiroId, payer.PaganteId, requestId);
-            entity["cr40f_statusgeracaolink"] = new OptionSetValue(202410002);
-            result.LinkStatus = "Generated";
-            result.PaymentUrl = link.ShortUrl;
+            entity["cr40f_cielolinkid"] = null;
+            entity["cr40f_cieloordernumber"] = null;
+            entity["cr40f_linkdepagamento"] = null;
         }
-        entity["cr40f_statusenvioemail"] = new OptionSetValue(payer.SendEmail ? 202410001 : 202410000);
         if (existing == null)
         {
             result.PagantesRecordId = service.Create(entity);
@@ -199,29 +236,87 @@ public sealed class GerarPagantesPlugin : IPlugin
             service.Update(entity);
             result.PagantesRecordId = existing.Id;
         }
+
+        if (!payer.GenerateLink) return result;
+        try
+        {
+            if (!changed && !string.IsNullOrWhiteSpace(existingLinkId))
+            {
+                result.LinkStatus = "Generated";
+                result.PaymentUrl = existing!.GetAttributeValue<string>("cr40f_linkdepagamento");
+            }
+            else
+            {
+                var orderNumber = CreateOrderNumber(financeiroId, payer.PaganteId, requestId);
+                var link = (cielo ?? throw new InvalidOperationException("Cliente Cielo indisponível."))
+                    .CreateLinkAsync(orderNumber, BuildCieloName(request, payer), BuildCieloDescription(request), payer.AmountCents)
+                    .GetAwaiter().GetResult();
+                createdLinks.Add(link.Id!);
+                result.LinkStatus = "Generated";
+                result.PaymentUrl = link.ShortUrl;
+                service.Update(new Entity(Pagantes, result.PagantesRecordId)
+                {
+                    ["cr40f_cielolinkid"] = link.Id,
+                    ["cr40f_linkdepagamento"] = link.ShortUrl,
+                    ["cr40f_cieloordernumber"] = orderNumber,
+                    ["cr40f_statusgeracaolink"] = new OptionSetValue(Completed),
+                    ["cr40f_errogeracaolink"] = null
+                });
+            }
+        }
+        catch (Exception error)
+        {
+            result.LinkStatus = "Failed";
+            result.EmailStatus = payer.SendEmail ? "Failed" : "NotApplicable";
+            result.Error = Sanitize(error.Message);
+            service.Update(new Entity(Pagantes, result.PagantesRecordId)
+            {
+                ["cr40f_statusgeracaolink"] = new OptionSetValue(Failed),
+                ["cr40f_errogeracaolink"] = result.Error,
+                ["cr40f_statusenvioemail"] = new OptionSetValue(payer.SendEmail ? Failed : NotApplicable),
+                ["cr40f_erroenvioemail"] = payer.SendEmail ? "E-mail não enviado porque o link não foi gerado." : null
+            });
+            return result;
+        }
+
+        if (!payer.SendEmail) return result;
+        try
+        {
+            var email = (renderer ?? throw new InvalidOperationException("Renderer de e-mail indisponível."))
+                .Render(request, payer, result.PaymentUrl ?? throw new InvalidOperationException("URL de pagamento ausente."));
+            (graph ?? throw new InvalidOperationException("Cliente Microsoft Graph indisponível."))
+                .SendAsync(payer.RecipientEmail, email, emailAssets ?? Array.Empty<InlineEmailAsset>())
+                .GetAwaiter().GetResult();
+            result.EmailStatus = "Sent";
+            service.Update(new Entity(Pagantes, result.PagantesRecordId)
+            {
+                ["cr40f_statusenvioemail"] = new OptionSetValue(Completed),
+                ["cr40f_dataenvioemail"] = DateTime.UtcNow,
+                ["cr40f_erroenvioemail"] = null
+            });
+        }
+        catch (Exception error)
+        {
+            result.EmailStatus = "Failed";
+            result.Error = Sanitize(error.Message);
+            service.Update(new Entity(Pagantes, result.PagantesRecordId)
+            {
+                ["cr40f_statusenvioemail"] = new OptionSetValue(Failed),
+                ["cr40f_erroenvioemail"] = result.Error
+            });
+        }
         return result;
     }
 
-    private static void QueueRemovedPayers(IOrganizationService service, IReadOnlyDictionary<Guid, Entity> existing, IEnumerable<Guid> retained)
+    private static void DeleteRemovedPayers(IOrganizationService service, CieloClient? cielo, IReadOnlyDictionary<Guid, Entity> existing, IEnumerable<Guid> retained)
     {
         var keep = new HashSet<Guid>(retained);
         foreach (var row in existing.Where(item => !keep.Contains(item.Key)).Select(item => item.Value))
         {
             var linkId = row.GetAttributeValue<string>("cr40f_cielolinkid");
-            if (!string.IsNullOrWhiteSpace(linkId)) QueueCleanup(service, linkId, "Substituído pelo rateio atual.");
-            service.Delete(Pagantes, row.Id);
-        }
-    }
-
-    private static void DeleteReplacedPayers(IOrganizationService service, CieloClient cielo, IReadOnlyDictionary<Guid, Entity> existing)
-    {
-        foreach (var row in existing.Values)
-        {
-            var linkId = row.GetAttributeValue<string>("cr40f_cielolinkid");
-            if (!string.IsNullOrWhiteSpace(linkId)) cielo.DeleteLinkAsync(linkId).GetAwaiter().GetResult();
-        }
-        foreach (var row in existing.Values)
-        {
+            if (!string.IsNullOrWhiteSpace(linkId))
+                (cielo ?? throw new InvalidOperationException("Configuração Cielo ausente para cancelar link existente."))
+                    .DeleteLinkAsync(linkId).GetAwaiter().GetResult();
             service.Delete(Pagantes, row.Id);
         }
     }

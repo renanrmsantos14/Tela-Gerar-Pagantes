@@ -13,5 +13,8 @@
     <PackageReference Include="Microsoft.CrmSdk.CoreAssemblies" Version="9.0.2.60" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <Reference Include="System.Net.Http" />
+    <EmbeddedResource Include="..\..\..\..\assets\email\payment-email-template.html">
+      <LogicalName>Cr40f.GerarPagantes.Plugin.Assets.payment-email-template.html</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 </Project>

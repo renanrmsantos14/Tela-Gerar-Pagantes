@@ -89,7 +89,7 @@ const replacements = new Map([
 for (const [from, to] of replacements) body = body.replaceAll(from, to)
 
 conditionActions.Send_Email_Link_Pagamento.inputs.parameters = {
-  'emailMessage/To': "noreply@betinhos.onmicrosoft.com;financeiro@betinhos.com.br;junior@betinhos.com.br;@{items('Apply_to_each_Pagante')?['email']}",
+  'emailMessage/To': "noreply@betinhos.onmicrosoft.com;financeiro@betinhos.com.br;junior@betinhos.com.br;@{items('Apply_to_each_Pagante')?['recipientEmail']}",
   'emailMessage/Subject': "Link de Pagamento @{body('Parse_JSON_Payload')?['financeiroDisplayId']} para @{items('Apply_to_each_Pagante')?['name']} | Betinhos Executive Service",
   'emailMessage/Body': body,
   'emailMessage/From': 'noreply@betinhos.com.br',
