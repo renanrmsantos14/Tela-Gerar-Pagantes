@@ -1,7 +1,7 @@
 {
   "name": "cr40f-gerar-pagantes",
   "private": true,
-  "version": "0.2.24",
+  "version": "0.2.25",
   "type": "module",
   "scripts": {
     "dev": "node scripts/bump-version.mjs && vite --host 0.0.0.0",
