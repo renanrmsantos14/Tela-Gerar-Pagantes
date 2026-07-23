@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { OperationData, Payer, Person } from '../domain'
 import { getRecordIdFromLocation, loadOperation, submitOperation } from '../dataverse'
+import { logAppError } from '../errorLogger'
 import { formatCurrency, splitEvenly } from '../money'
 import { AllocationSummary } from './components/AllocationSummary'
 import { ExternalPayerDialog } from './components/ExternalPayerDialog'
@@ -44,7 +45,10 @@ export function App() {
       if (!id && window.Xrm?.WebApi) throw new Error('Nenhuma OP foi recebida pela tela.')
       const data = await loadOperation(id ?? '00000000-0000-0000-0000-000000000001')
       setOperation(data); setPayers(data.payers); setSelectionComplete(data.payers.length > 0)
+      const failedLinks = data.payers.filter((payer) => payer.linkStatus === 'Failed')
+      if (failedLinks.length) setNotice({ tone: 'error', text: `${failedLinks.length} link(s) de pagamento não foram gerados. Revise o Pagante e o histórico do Flow.` })
     } catch (error) {
+      await logAppError(error, { source: 'React', action: 'refresh', phase: 'load-operation', component: 'App' })
       setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível carregar a OP.' })
     } finally { setLoading(false) }
   }, [])
@@ -100,6 +104,7 @@ export function App() {
       const flowError = result.errors.find((error) => error.code === 'FLOW_NOT_STARTED')
       setNotice({ tone: 'success', text: flowError ? `Pagantes gravados. Processamento pendente: ${flowError.message}` : 'Pagantes gravados. E-mails serão enviados após o processamento.' }); setConfirmOpen(false); await refresh()
     } catch (error) {
+      await logAppError(error, { source: 'React', action: 'save', phase: 'submit-operation', component: 'App', detailId: operation.id, detailType: 'cr40f_financeiro' })
       setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível gerar os pagantes.' })
     } finally { setSaving(false) }
   }

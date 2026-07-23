@@ -1,5 +1,6 @@
 import { demoOperation } from './demo'
 import type { Guid, OperationData, Payer, Person, SubmitRequest, SubmitResult } from './domain'
+import { logAppError } from './errorLogger'
 
 interface RetrieveResult { entities: Array<Record<string, unknown>>; nextLink?: string }
 
@@ -22,6 +23,20 @@ const payerStatusPending = 202410001
 const flowUrlEnvironmentVariable = 'new_FlowURLGerarPagantesHttp'
 const paymentMethods = new Set([202410000, 202410001, 202410002])
 const paidStatuses = new Set(['Pago', 'Autorizado'])
+
+function toLinkStatus(value: string): Payer['linkStatus'] {
+  if (value === 'Pendente') return 'Pending'
+  if (value === 'Concluido') return 'Generated'
+  if (value === 'Erro') return 'Failed'
+  return 'NotApplicable'
+}
+
+function toEmailStatus(value: string): Payer['emailStatus'] {
+  if (value === 'Pendente') return 'Pending'
+  if (value === 'Concluido') return 'Sent'
+  if (value === 'Erro') return 'Failed'
+  return 'NotApplicable'
+}
 
 function getXrm(): XrmApi | undefined {
   if (window.Xrm) return window.Xrm
@@ -87,13 +102,15 @@ function toPayer(row: Record<string, unknown>, people: Map<Guid, Person>): Payer
     generateLink: Boolean(text(row, 'cr40f_linkdepagamento')),
     sendEmail: emailStatusValue ? emailStatusValue !== '202410000' : false,
     paymentUrl: text(row, 'cr40f_linkdepagamento') || undefined,
-    linkStatus: (text(row, 'cr40f_statusgeracaolink@OData.Community.Display.V1.FormattedValue') || 'NotApplicable') as Payer['linkStatus'],
-    emailStatus: (text(row, 'cr40f_statusenvioemail@OData.Community.Display.V1.FormattedValue') || 'NotApplicable') as Payer['emailStatus']
+    linkStatus: toLinkStatus(text(row, 'cr40f_statusgeracaolink@OData.Community.Display.V1.FormattedValue')),
+    emailStatus: toEmailStatus(text(row, 'cr40f_statusenvioemail@OData.Community.Display.V1.FormattedValue')),
+    linkError: text(row, 'cr40f_errogeracaolink') || undefined,
+    emailError: text(row, 'cr40f_erroenvioemail') || undefined
   }
 }
 
 async function fetchExistingPayers(recordId: Guid): Promise<Array<Record<string, unknown>>> {
-  const baseSelect = 'cr40f_pagantesid,_cr40f_financeiro_value,_cr40f_bancodedados_value,cr40f_valor,cr40f_formadepagamento,cr40f_status,cr40f_statusgeracaolink,cr40f_statusenvioemail,cr40f_linkdepagamento,cr40f_cielolinkid,cr40f_cieloordernumber'
+  const baseSelect = 'cr40f_pagantesid,_cr40f_financeiro_value,_cr40f_bancodedados_value,cr40f_valor,cr40f_formadepagamento,cr40f_status,cr40f_statusgeracaolink,cr40f_statusenvioemail,cr40f_errogeracaolink,cr40f_erroenvioemail,cr40f_linkdepagamento,cr40f_cielolinkid,cr40f_cieloordernumber'
   const filter = `$filter=_cr40f_financeiro_value eq ${recordId}`
   return fetchAll('cr40f_pagantes', `?$select=${baseSelect}&${filter}`)
 }
@@ -188,6 +205,7 @@ export async function submitOperation(financeiroId: Guid, request: SubmitRequest
       await startGerarPagantesFlow(flowUrl, financeiroId, request, results)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Nao foi possivel acionar o Flow HTTP.'
+      await logAppError(error, { source: 'Web Resource', action: 'startGerarPagantesFlow', phase: 'flow-http', component: 'dataverse', detailId: financeiroId, detailType: 'cr40f_financeiro', payload: { requestId: request.requestId } })
       console.error('[GerarPagantes] Pagantes gravados, mas Flow nao foi acionado.', error)
       errors.push({ code: 'FLOW_NOT_STARTED', message })
     }
@@ -265,7 +283,9 @@ async function startGerarPagantesFlow(url: string, financeiroId: Guid, request: 
     }))
   })
 
-  await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body })
+  const response = await fetch(url, { method: 'POST', mode: 'cors', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body })
+  const result = await response.json().catch(() => null) as { success?: boolean; message?: string } | null
+  if (!response.ok || !result?.success) throw new Error(result?.message || `Flow HTTP retornou ${response.status}.`)
   console.info('[GerarPagantes] Flow HTTP acionado.', { requestId: request.requestId })
 }
 

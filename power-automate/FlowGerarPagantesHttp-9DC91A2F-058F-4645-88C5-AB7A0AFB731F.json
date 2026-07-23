@@ -137,15 +137,18 @@
           "type": "Response",
           "kind": "Http",
           "inputs": {
-            "statusCode": 202,
+            "statusCode": 200,
+            "headers": {
+              "Access-Control-Allow-Origin": "@triggerOutputs()?['headers']?['origin']"
+            },
             "body": {
               "success": true,
               "requestId": "@body('Parse_JSON_Payload')?['requestId']",
-              "message": "Processamento iniciado."
+                "message": "Processamento concluido."
             }
           },
           "runAfter": {
-            "Parse_JSON_Payload": [
+            "Condition_Tem_Link": [
               "Succeeded"
             ]
           }
@@ -157,7 +160,7 @@
             "where": "@equals(item()?['generateLink'], true)"
           },
           "runAfter": {
-            "Response_Accepted": [
+            "Parse_JSON_Payload": [
               "Succeeded"
             ]
           }
@@ -358,6 +361,40 @@
                         ]
                       }
                     },
+                    "Create_Log_Erro_Envio_Email": {
+                      "type": "OpenApiConnection",
+                      "inputs": {
+                        "parameters": {
+                          "entityName": "new_appmotoristaslogs",
+                          "item/new_name": "Tela Gerar Pagantes - erro de envio de e-mail",
+                          "item/new_occurredat": "@utcNow()",
+                          "item/new_severity": "error",
+                          "item/new_source": "Power Automate",
+                          "item/new_action": "Send_Email_Link_Pagamento",
+                          "item/new_phase": "Apply_to_each_Pagante",
+                          "item/new_component": "FlowGerarPagantesHttp",
+                          "item/new_detailid": "@items('Apply_to_each_Pagante')?['paganteRecordId']",
+                          "item/new_detailtype": "cr40f_pagantes",
+                          "item/new_message": "@string(outputs('Send_Email_Link_Pagamento'))",
+                          "item/new_stack": "@string(outputs('Send_Email_Link_Pagamento'))",
+                          "item/new_errorname": "SendEmailV2",
+                          "item/new_errorcode": "",
+                          "item/new_appname": "Tela Gerar Pagantes",
+                          "item/new_payloadjson": "@string(items('Apply_to_each_Pagante'))",
+                          "item/new_rawjson": "@string(outputs('Send_Email_Link_Pagamento'))"
+                        },
+                        "host": {
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps",
+                          "operationId": "CreateRecord",
+                          "connectionName": "shared_commondataserviceforapps"
+                        }
+                      },
+                      "runAfter": {
+                        "Update_Pagante_Email_Erro": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
                     "Enviar_Email_Erro_Envio_Email": {
                       "type": "OpenApiConnection",
                       "inputs": {
@@ -412,6 +449,40 @@
                     ]
                   }
                 },
+                "Create_Log_Erro_Geracao_Link": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "parameters": {
+                      "entityName": "new_appmotoristaslogs",
+                      "item/new_name": "Tela Gerar Pagantes - erro de geração de link",
+                      "item/new_occurredat": "@utcNow()",
+                      "item/new_severity": "error",
+                      "item/new_source": "Power Automate",
+                      "item/new_action": "HTTP_Gerar_Link_Cielo",
+                      "item/new_phase": "Apply_to_each_Pagante",
+                      "item/new_component": "FlowGerarPagantesHttp",
+                      "item/new_detailid": "@items('Apply_to_each_Pagante')?['paganteRecordId']",
+                      "item/new_detailtype": "cr40f_pagantes",
+                      "item/new_message": "@string(outputs('HTTP_Gerar_Link_Cielo'))",
+                      "item/new_stack": "@string(outputs('HTTP_Gerar_Link_Cielo'))",
+                      "item/new_errorname": "HTTP_Gerar_Link_Cielo",
+                      "item/new_errorcode": "",
+                      "item/new_appname": "Tela Gerar Pagantes",
+                      "item/new_payloadjson": "@string(items('Apply_to_each_Pagante'))",
+                      "item/new_rawjson": "@string(outputs('HTTP_Gerar_Link_Cielo'))"
+                    },
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps",
+                      "operationId": "CreateRecord",
+                      "connectionName": "shared_commondataserviceforapps"
+                    }
+                  },
+                  "runAfter": {
+                    "Update_Pagante_Link_Erro": [
+                      "Succeeded"
+                    ]
+                  }
+                },
                 "Enviar_Email_Erro_Geracao_Link": {
                   "type": "OpenApiConnection",
                   "inputs": {
@@ -459,6 +530,36 @@
         "Scope_Erro_Global": {
           "type": "Scope",
           "actions": {
+            "Create_Log_Erro_Global": {
+              "type": "OpenApiConnection",
+              "inputs": {
+                "parameters": {
+                  "entityName": "new_appmotoristaslogs",
+                  "item/new_name": "Tela Gerar Pagantes - erro global do Flow",
+                  "item/new_occurredat": "@utcNow()",
+                  "item/new_severity": "critical",
+                  "item/new_source": "Power Automate",
+                  "item/new_action": "FlowGerarPagantesHttp",
+                  "item/new_phase": "Scope_Erro_Global",
+                  "item/new_component": "FlowGerarPagantesHttp",
+                  "item/new_detailid": "@coalesce(triggerBody()?['financeiroId'], '')",
+                  "item/new_detailtype": "cr40f_financeiro",
+                  "item/new_message": "Falha global no Flow Gerar Pagantes HTTP.",
+                  "item/new_stack": "@string(triggerBody())",
+                  "item/new_errorname": "FlowFailure",
+                  "item/new_errorcode": "",
+                  "item/new_appname": "Tela Gerar Pagantes",
+                  "item/new_payloadjson": "@string(triggerBody())",
+                  "item/new_rawjson": "@string(triggerBody())"
+                },
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps",
+                  "operationId": "CreateRecord",
+                  "connectionName": "shared_commondataserviceforapps"
+                }
+              },
+              "runAfter": {}
+            },
             "Enviar_Email_Erro_Global": {
               "type": "OpenApiConnection",
               "inputs": {

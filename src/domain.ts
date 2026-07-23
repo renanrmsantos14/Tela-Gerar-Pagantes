@@ -29,6 +29,8 @@ export interface Payer extends Person {
   paymentUrl?: string
   linkStatus: LinkStatus
   emailStatus: EmailStatus
+  linkError?: string
+  emailError?: string
 }
 
 export interface OperationData {

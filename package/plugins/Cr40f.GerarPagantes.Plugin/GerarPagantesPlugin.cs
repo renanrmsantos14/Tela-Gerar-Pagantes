@@ -31,6 +31,7 @@ public sealed class GerarPagantesPlugin : IPlugin
         var tracing = (ITracingService)serviceProvider.GetService(typeof(ITracingService));
         var factory = (IOrganizationServiceFactory)serviceProvider.GetService(typeof(IOrganizationServiceFactory));
         var service = factory.CreateOrganizationService(context.UserId);
+        var logWriter = new OperationalLogWriter(service, tracing);
         var response = new GerarPagantesResponse();
         try
         {
@@ -73,6 +74,7 @@ public sealed class GerarPagantesPlugin : IPlugin
         catch (Exception error)
         {
             tracing.Trace("cr40f_GerarPagantes: {0}", error);
+            logWriter.TryWriteError(context, error);
             throw error is InvalidPluginExecutionException
                 ? error
                 : new InvalidPluginExecutionException("Não foi possível concluir a geração dos pagantes. " + Sanitize(error.Message), error);

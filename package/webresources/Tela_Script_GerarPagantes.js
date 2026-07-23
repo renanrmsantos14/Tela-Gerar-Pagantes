@@ -4,6 +4,54 @@ var Cr40fGerarPagantes = (function () {
   var OVERLAY_ID = 'cr40f-gerar-pagantes-native-overlay';
   var OVERLAY_STYLE_ID = 'cr40f-gerar-pagantes-native-overlay-style';
   var CLOSE_MESSAGE = 'cr40f-gerar-pagantes:close';
+  var ERROR_LOG_TABLE = 'new_appmotoristaslog';
+
+  function getXrm() {
+    if (window.Xrm) return window.Xrm;
+    try { return window.parent !== window ? window.parent.Xrm : null; }
+    catch (error) { return null; }
+  }
+
+  function truncate(value, limit) { value = String(value || ''); return value.length <= limit ? value : value.slice(0, limit); }
+
+  function serialize(value) {
+    try { return JSON.stringify(value) || '{}'; }
+    catch (error) { return '{}'; }
+  }
+
+  function writeError(error, context) {
+    var api = getXrm();
+    if (!api || !api.WebApi || !api.WebApi.createRecord) return Promise.resolve();
+    var normalized = error instanceof Error ? error : new Error(typeof error === 'string' ? error : serialize(error));
+    var action = context.action || 'runtime-error';
+    var raw = serialize({ name: normalized.name, message: normalized.message, stack: normalized.stack || normalized.toString() });
+    var record = {
+      new_name: truncate('Tela Gerar Pagantes - ' + action, 160),
+      new_occurredat: new Date().toISOString(),
+      new_severity: 'error',
+      new_source: context.source || 'Command Bar',
+      new_action: truncate(action, 180),
+      new_phase: context.phase || 'runtime',
+      new_component: context.component || 'Cr40fGerarPagantes',
+      new_detailid: context.detailId || '',
+      new_detailtype: context.detailType || '',
+      new_message: truncate(normalized.message || 'Erro sem mensagem.', 20000),
+      new_stack: truncate(normalized.stack || normalized.toString(), 100000),
+      new_errorname: truncate(normalized.name || 'Error', 220),
+      new_errorcode: truncate(context.errorCode || '', 120),
+      new_appname: 'Tela Gerar Pagantes',
+      new_payloadjson: truncate(serialize(context.payload || {}), 100000),
+      new_rawjson: truncate(raw, 100000)
+    };
+    try {
+      return api.WebApi.createRecord(ERROR_LOG_TABLE, record).catch(function (loggingError) {
+        console.error('[Cr40fGerarPagantes] Falha ao gravar erro na tabela de logs.', loggingError);
+      });
+    } catch (loggingError) {
+      console.error('[Cr40fGerarPagantes] Falha ao preparar erro para a tabela de logs.', loggingError);
+      return Promise.resolve();
+    }
+  }
 
   function getRecordId(selectedItemIds) {
     if (!selectedItemIds) return null;
@@ -21,6 +69,7 @@ var Cr40fGerarPagantes = (function () {
     try {
       if (Xrm.Page && Xrm.Page.data) Xrm.Page.data.refresh(false);
     } catch (error) {
+      void writeError(error, { action: 'refreshHost', phase: 'host-refresh' });
       console.warn('[Cr40fGerarPagantes] Nao foi possivel atualizar o formulario', error);
     }
   }
@@ -102,6 +151,7 @@ var Cr40fGerarPagantes = (function () {
 
       openNativeOverlay(recordId);
     } catch (error) {
+      await writeError(error, { action: 'abrirPainelRateio', phase: 'open-web-resource' });
       console.error('[Cr40fGerarPagantes] Falha ao abrir web resource', error);
       await alert('Nao foi possivel abrir a cobranca', 'Tente novamente. Se o problema continuar, informe o horario desta tentativa ao suporte.');
     }
