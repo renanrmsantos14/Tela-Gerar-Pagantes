@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Gerar Pagantes HTTP Flow Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "financeiroId",
+    "financeiroDisplayId",
+    "totalCents",
+    "pagantes"
+  ],
+  "properties": {
+    "requestId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "financeiroId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "financeiroDisplayId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "totalCents": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "serviceStartDate": {
+      "type": ["string", "null"]
+    },
+    "serviceEndDate": {
+      "type": ["string", "null"]
+    },
+    "pagantes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "paganteRecordId",
+          "paganteId",
+          "name",
+          "email",
+          "amountCents",
+          "paymentMethod",
+          "generateLink",
+          "sendEmail"
+        ],
+        "properties": {
+          "paganteRecordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "paganteId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "email": {
+            "type": "string"
+          },
+          "amountCents": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "paymentMethod": {
+            "type": "integer"
+          },
+          "generateLink": {
+            "type": "boolean"
+          },
+          "sendEmail": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}
