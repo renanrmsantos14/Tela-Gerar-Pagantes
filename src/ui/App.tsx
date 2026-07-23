@@ -17,7 +17,7 @@ const appVersion = `v${__APP_VERSION__} ${__APP_DATE__}`
 type Notice = { tone: 'error' | 'success'; text: string } | null
 
 const emailValid = (email: string) => /^\S+@\S+\.\S+$/.test(email.trim())
-const makePayer = (person: Person, amountCents = 0): Payer => ({ ...person, amountCents, paymentMethod: 202410000, generateLink: true, sendEmail: true, linkStatus: 'NotApplicable', emailStatus: 'NotApplicable' })
+const makePayer = (person: Person, amountCents = 0): Payer => ({ ...person, amountCents, paymentMethod: 202410000, generateLink: true, sendEmail: emailValid(person.email), linkStatus: 'NotApplicable', emailStatus: 'NotApplicable' })
 
 export function App() {
   const [operation, setOperation] = useState<OperationData | null>(null)
@@ -66,7 +66,7 @@ export function App() {
     if (payers.some((payer) => payer.amountCents <= 0)) messages.push('Todo pagante deve possuir valor maior que zero.')
     if (remaining > 0) messages.push(`Falta ratear ${formatCurrency(remaining)} para fechar o total da OP.`)
     if (remaining < 0) messages.push(`O rateio excede o total da OP em ${formatCurrency(Math.abs(remaining))}.`)
-    if (payers.some((payer) => payer.generateLink && !emailValid(payer.email))) messages.push('Informe um e-mail válido para quem receberá link de pagamento.')
+    if (payers.some((payer) => payer.sendEmail && !emailValid(payer.email))) messages.push('Informe um e-mail válido para quem receberá o link de pagamento.')
     return messages
   }, [operation, payers, remaining])
 
