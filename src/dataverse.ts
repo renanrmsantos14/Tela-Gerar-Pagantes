@@ -198,7 +198,7 @@ async function beginGenerationLock(financeiroId: Guid, request: SubmitRequest): 
   const api = getXrm()?.WebApi
   if (!api) return request.requestId
   try {
-    const recent = await fetchAll(generationTable, `?$select=cr40f_geracaopagantesoperacaoid,cr40f_requestid,cr40f_sucesso,cr40f_resultado,createdon&$filter=_cr40f_financeiro_value eq ${financeiroId} and cr40f_sucesso eq false&$orderby=createdon desc&$top=1`)
+    const recent = await fetchAll(generationTable, `?$select=cr40f_geracaopagantesoperacaoid,cr40f_request_id,cr40f_sucesso,cr40f_resultado,createdon&$filter=_cr40f_financeiro_value eq ${financeiroId} and cr40f_sucesso eq false&$orderby=createdon desc&$top=1`)
     const latest = recent[0]
     if (latest) {
       const createdAt = Date.parse(text(latest, 'createdon'))
@@ -209,8 +209,9 @@ async function beginGenerationLock(financeiroId: Guid, request: SubmitRequest): 
     }
     const operator = currentOperator()
     const created = await api.createRecord(generationTable, {
-      cr40f_requestid: request.requestId,
-      'cr40f_financeiro@odata.bind': `/cr40f_financeiros(${financeiroId})`,
+      cr40f_name: `Geração ${request.financeiroDisplayId} - ${request.requestId}`,
+      cr40f_request_id: request.requestId,
+      'cr40f_Financeiro@odata.bind': `/cr40f_financeiros(${financeiroId})`,
       cr40f_sucesso: false,
       cr40f_resultado: JSON.stringify({ status: 'Processing', operatorId: operator.id, operatorName: operator.name, financeiroVersion: request.expectedFinanceiroVersion, allocationSummary: { totalCents: request.totalCents, allocatedCents: request.pagantes.reduce((sum, payer) => sum + payer.amountCents, 0), payerCount: request.pagantes.length } })
     })

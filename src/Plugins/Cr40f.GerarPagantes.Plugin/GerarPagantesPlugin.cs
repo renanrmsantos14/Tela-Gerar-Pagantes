@@ -214,13 +214,15 @@ public sealed class GerarPagantesPlugin : IPlugin
 
     private static void QueueCleanup(IOrganizationService service, string cieloLinkId, string reason) => service.Create(new Entity(Limpeza)
     {
+        ["cr40f_name"] = $"Limpeza Cielo {cieloLinkId}",
         ["cr40f_cielolinkid"] = cieloLinkId,
         ["cr40f_ultimoerro"] = Sanitize(reason)
     });
 
     private static void WriteOperation(IOrganizationService service, Guid requestId, Guid financeiroId, bool success, GerarPagantesResponse response) => service.Create(new Entity(Operacao)
     {
-        ["cr40f_requestid"] = requestId.ToString("D"),
+        ["cr40f_name"] = $"Geração {financeiroId:D} - {requestId:D}",
+        ["cr40f_request_id"] = requestId.ToString("D"),
         ["cr40f_financeiro"] = new EntityReference(Financeiro, financeiroId),
         ["cr40f_sucesso"] = success,
         ["cr40f_resultado"] = JsonConvert.SerializeObject(response)
@@ -229,7 +231,7 @@ public sealed class GerarPagantesPlugin : IPlugin
     private static bool IsProcessed(IOrganizationService service, Guid requestId) => service.RetrieveMultiple(new QueryExpression(Operacao)
     {
         ColumnSet = new ColumnSet(false), TopCount = 1,
-        Criteria = new FilterExpression(LogicalOperator.And) { Conditions = { new ConditionExpression("cr40f_requestid", ConditionOperator.Equal, requestId.ToString("D")) } }
+        Criteria = new FilterExpression(LogicalOperator.And) { Conditions = { new ConditionExpression("cr40f_request_id", ConditionOperator.Equal, requestId.ToString("D")) } }
     }).Entities.Any();
 
     private static string CreateOrderNumber(Guid financeiroId, Guid payerId, Guid requestId) => (financeiroId.ToString("N") + payerId.ToString("N") + requestId.ToString("N")).Substring(0, 20).ToUpperInvariant();
