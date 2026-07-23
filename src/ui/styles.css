@@ -36,7 +36,7 @@ h1, h2, p { margin-top: 0; } h1 { margin: 0 0 3px; color: var(--bt-navy); font-s
 @media (hover: hover) and (pointer: fine) { .person-option:hover, .directory-option:hover:not(:disabled) { border-color: #c7d2e2; background: var(--bt-soft); } }
 @media (max-width: 820px) { .popup-shell { padding: 14px 12px 86px; }.operation-header { align-items: flex-start; }.operation-header__actions { flex-direction: column-reverse; align-items: flex-end; }.allocation-summary { grid-template-columns: 1fr; gap: 1px; }.allocation-summary > div { display: flex; justify-content: space-between; align-items: center; min-height: 52px; }.allocation-summary strong { margin: 0; font-size: 17px; }.allocation-summary__state { display: grid !important; grid-template-columns: auto 1fr auto !important; }.allocation-summary__state svg { grid-row: auto; }.people-grid { grid-template-columns: 1fr; max-height: 210px; }.payer-row { grid-template-columns: 1fr 1fr; }.payer-identity, .payer-link { grid-column: 1 / -1; }.payer-options { grid-column: 1 / -1; min-height: 44px; }.ui-switch { min-height: 44px; }.sticky-action-bar { padding: 10px 12px max(10px, env(safe-area-inset-bottom)); } }
 @media (max-width: 560px) { .operation-header__actions .ui-badge { display: none; }.operation-mark { width: 36px; height: 36px; }.operation-header h1 { font-size: 22px; }.panel { padding: 13px; }.panel-heading { align-items: flex-start; }.button-compact { min-height: 32px; }.modal-layer { padding: 10px; }.modal-card { max-height: calc(100dvh - 20px); padding: 15px; } }
-@media (max-width: 380px) { .operation-header__brand { gap: 7px; }.payer-row { grid-template-columns: 1fr; }.payer-options { flex-wrap: wrap; }.sticky-action-bar .version { display: none; }.sticky-action-bar .ui-button { width: 100%; } }
+@media (max-width: 380px) { .operation-header__brand { gap: 7px; }.payer-row { grid-template-columns: 1fr; }.payer-options { flex-wrap: wrap; }.sticky-action-bar .ui-button { width: 100%; } }
 /* Camada de acabamento: usa apenas tokens Betinhos e evita deslocamento em interacoes recorrentes. */
 html { background: var(--bt-canvas); }
 body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
@@ -63,9 +63,20 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .ui-field > input, .ui-field > select { background: var(--bt-neutral); transition: border-color 150ms var(--bt-ease-out), box-shadow 150ms var(--bt-ease-out), background-color 150ms var(--bt-ease-out); }
 .ui-field > input:hover, .ui-field > select:hover { border-color: #c7d2e2; }
 .payer-options { padding-top: 1px; }
-.sticky-action-bar { min-height: 72px; background: rgba(255,255,255,.96); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.sticky-action-bar { min-height: 72px; background: var(--bt-surface); }
 .sticky-action-bar .ui-button { min-width: 176px; min-height: 44px; }
+.action-meta { display: grid; gap: 3px; min-width: 0; }
+.action-status { color: var(--bt-slate); font-size: 12px; font-weight: 700; }
+.action-status.is-ready { color: var(--bt-success); }
 .version { letter-spacing: .01em; }
+.panel--compact { padding-block: 12px; }
+.compact-step, .compact-step__actions, .selection-actions, .payer-list-actions { display: flex; align-items: center; }
+.compact-step { justify-content: space-between; gap: 12px; }
+.compact-step h2 { margin: 0; font-size: 14px; }
+.compact-step__actions, .payer-list-actions { gap: 8px; }
+.selection-actions { justify-content: space-between; gap: 12px; margin-top: 12px; }
+.selection-actions .add-external { margin-top: 0; }
+.selection-continue { min-width: 170px; }
 .modal-card { border-color: var(--bt-line); }
 @media (hover: hover) and (pointer: fine) {
   .ui-button:hover:not(:disabled) { border-color: #c7d2e2; background: var(--bt-soft); transform: translateY(-1px); }
@@ -77,5 +88,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   .ui-button--primary:hover:not(:disabled) { border-color: var(--bt-navy); background: var(--bt-navy); }
 }
 @media (max-width: 820px) { .popup-shell { padding: 16px 14px 92px; }.sticky-action-bar .ui-button { min-width: 0; } }
-@media (max-width: 560px) { .operation-header { padding-bottom: 16px; }.panel { padding: 14px; }.sticky-action-bar { min-height: 68px; }.sticky-action-bar .ui-button { min-height: 44px; } }
+@media (max-width: 560px) { .operation-header { padding-bottom: 16px; }.panel { padding: 14px; }.sticky-action-bar { min-height: 68px; }.sticky-action-bar .ui-button { min-height: 44px; }.action-status { display: none; } }
+@media (max-width: 560px) { .selection-actions { align-items: stretch; }.selection-actions .ui-button { min-height: 44px; }.selection-continue { min-width: 0; }.compact-step { align-items: flex-start; }.compact-step__actions { flex-wrap: wrap; justify-content: flex-end; } }
+@media (max-width: 380px) { .sticky-action-bar { align-items: end; }.action-meta { max-width: 108px; }.version { font-size: 10px; white-space: nowrap; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }

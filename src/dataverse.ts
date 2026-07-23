@@ -15,6 +15,12 @@ declare global { interface Window { Xrm?: XrmApi } }
 
 const guidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+function getXrm(): XrmApi | undefined {
+  if (window.Xrm) return window.Xrm
+  try { return window.parent !== window ? window.parent.Xrm : undefined }
+  catch { return undefined }
+}
+
 export function normalizeGuid(value: string): Guid {
   const clean = value.replace(/[{}]/g, '').trim()
   if (!guidPattern.test(clean)) throw new Error('A OP informada não possui um GUID válido.')
@@ -34,7 +40,7 @@ export function getRecordIdFromLocation(): Guid | null {
 }
 
 async function fetchAll(entity: string, options: string): Promise<Array<Record<string, unknown>>> {
-  const api = window.Xrm?.WebApi
+  const api = getXrm()?.WebApi
   if (!api) return []
   const all: Array<Record<string, unknown>> = []
   let page: RetrieveResult | undefined = await api.retrieveMultipleRecords(entity, options)
@@ -77,8 +83,9 @@ function toPayer(row: Record<string, unknown>, people: Map<Guid, Person>): Payer
 }
 
 export async function loadOperation(recordId: Guid): Promise<OperationData> {
-  if (!window.Xrm?.WebApi) return demoOperation
-  const api = window.Xrm.WebApi
+  const xrm = getXrm()
+  if (!xrm?.WebApi) return demoOperation
+  const api = xrm.WebApi
   const finance = await api.retrieveRecord('cr40f_financeiro', recordId, '?$select=cr40f_id,versionnumber')
   const services = await fetchAll('cr40f_reservadeveculos', `?$select=cr40f_reservadeveculosid,_cr40f_solicitante_value&$filter=_cr40f_financeiro_value eq ${recordId}`)
   const serviceIds = services.map((service) => text(service, 'cr40f_reservadeveculosid')).filter(Boolean)
@@ -113,7 +120,7 @@ export async function loadOperation(recordId: Guid): Promise<OperationData> {
 }
 
 export async function submitOperation(financeiroId: Guid, request: SubmitRequest): Promise<SubmitResult> {
-  const api = window.Xrm?.WebApi
+  const api = getXrm()?.WebApi
   if (!api) return { success: true, requestId: request.requestId, financeiroId, totalCents: request.pagantes.reduce((sum, payer) => sum + payer.amountCents, 0), results: request.pagantes.map((payer) => ({ paganteId: payer.paganteId, pagantesRecordId: payer.existingPaganteId ?? payer.paganteId, linkStatus: payer.generateLink ? 'Generated' : 'NotApplicable', emailStatus: payer.sendEmail ? 'Pending' : 'NotApplicable' })), errors: [] }
   const action = {
     entity: { entityType: 'cr40f_financeiro', id: financeiroId },

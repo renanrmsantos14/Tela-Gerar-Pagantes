@@ -1,8 +1,9 @@
 var Cr40fGerarPagantes = (function () {
   'use strict';
 
-  var HOST_BLUR_ID = 'cr40f-gerar-pagantes-host-blur';
-  var HOST_BLUR_STYLE_ID = 'cr40f-gerar-pagantes-host-blur-style';
+  var OVERLAY_ID = 'cr40f-gerar-pagantes-native-overlay';
+  var OVERLAY_STYLE_ID = 'cr40f-gerar-pagantes-native-overlay-style';
+  var CLOSE_MESSAGE = 'cr40f-gerar-pagantes:close';
 
   function getRecordId(selectedItemIds) {
     if (!selectedItemIds) return null;
@@ -16,55 +17,94 @@ var Cr40fGerarPagantes = (function () {
 
   function alert(title, text) { return Xrm.Navigation.openAlertDialog({ title: title, text: text }); }
 
-  // O diálogo do Dynamics não expõe uma API de blur do host. Este overlay é isolado,
-  // não captura eventos e é sempre removido no finally. Se o host bloquear acesso,
-  // o diálogo oficial continua funcionando sem blur.
-  function installHostBlur() {
+  function refreshHost() {
     try {
-      var hostDocument = window.top.document;
-      var overlay = hostDocument.createElement('div');
-      overlay.id = HOST_BLUR_ID;
-      overlay.setAttribute('aria-hidden', 'true');
-      var style = hostDocument.createElement('style');
-      style.id = HOST_BLUR_STYLE_ID;
-      style.textContent = '#' + HOST_BLUR_ID + '{position:fixed;inset:0;z-index:2147483000;pointer-events:none;background:rgba(0,26,61,.32);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);opacity:0;transition:opacity 180ms cubic-bezier(.23,1,.32,1)} #' + HOST_BLUR_ID + '.is-visible{opacity:1}';
-      (hostDocument.head || hostDocument.documentElement).appendChild(style);
-      hostDocument.body.appendChild(overlay);
-      requestAnimationFrame(function () { overlay.classList.add('is-visible'); });
-      var observer = new MutationObserver(function () {
-        var dialogs = Array.prototype.slice.call(hostDocument.querySelectorAll('[role="dialog"]'));
-        var dialog = dialogs[dialogs.length - 1];
-        if (!dialog || dialog === overlay) return;
-        var zIndex = Number.parseInt(hostDocument.defaultView.getComputedStyle(dialog).zIndex, 10);
-        if (Number.isFinite(zIndex) && zIndex > 1) overlay.style.zIndex = String(Math.max(1, zIndex - 1));
-      });
-      observer.observe(hostDocument.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
-      return function removeHostBlur() {
-        observer.disconnect();
-        overlay.remove();
-        style.remove();
-      };
+      if (Xrm.Page && Xrm.Page.data) Xrm.Page.data.refresh(false);
     } catch (error) {
-      console.warn('[Cr40fGerarPagantes] Blur do host indisponível', error);
-      return function removeHostBlurFallback() {};
+      console.warn('[Cr40fGerarPagantes] Nao foi possivel atualizar o formulario', error);
     }
   }
 
+  // O backdrop e um pseudo-elemento atras do iframe. Assim, nunca compoe blur sobre a tela de rateio.
+  function openNativeOverlay(recordId) {
+    var hostWindow = window.top;
+    var hostDocument = hostWindow.document;
+    var existing = hostDocument.getElementById(OVERLAY_ID);
+    if (existing) existing.remove();
+    var oldStyle = hostDocument.getElementById(OVERLAY_STYLE_ID);
+    if (oldStyle) oldStyle.remove();
+
+    var style = hostDocument.createElement('style');
+    style.id = OVERLAY_STYLE_ID;
+    style.textContent =
+      '#' + OVERLAY_ID + '{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;isolation:isolate;opacity:0;transition:opacity 180ms cubic-bezier(.23,1,.32,1)}' +
+      '#' + OVERLAY_ID + '::before{position:absolute;inset:0;z-index:0;content:"";background:rgba(0,26,61,.32);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}' +
+      '#' + OVERLAY_ID + '.is-visible{opacity:1}' +
+      '#' + OVERLAY_ID + ' iframe{position:relative;z-index:1;width:min(100vw,900px);height:min(100dvh,900px);border:0;background:transparent;box-shadow:none;outline:0}';
+
+    var overlay = hostDocument.createElement('div');
+    overlay.id = OVERLAY_ID;
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', 'Gerar pagantes');
+    var frame = hostDocument.createElement('iframe');
+    frame.title = 'Gerar pagantes';
+    frame.setAttribute('allow', 'clipboard-write');
+    var clientUrl = Xrm.Utility.getGlobalContext().getClientUrl().replace(/\/$/, '');
+    frame.src = clientUrl + '/WebResources/Tela_GerarPagantes/index.html?recordId=' + encodeURIComponent(recordId) + '&embedded=1';
+    overlay.appendChild(frame);
+    (hostDocument.head || hostDocument.documentElement).appendChild(style);
+    hostDocument.body.appendChild(overlay);
+
+    var closed = false;
+    function close(shouldRefresh) {
+      if (closed) return;
+      closed = true;
+      hostWindow.removeEventListener('message', onMessage);
+      hostWindow.removeEventListener('keydown', onKeyDown, true);
+      overlay.classList.remove('is-visible');
+      hostWindow.setTimeout(function () {
+        overlay.remove();
+        style.remove();
+        if (shouldRefresh) refreshHost();
+      }, 160);
+    }
+    function onMessage(event) {
+      if (event.origin !== hostWindow.location.origin || event.source !== frame.contentWindow || !event.data || event.data.type !== CLOSE_MESSAGE) return;
+      close(Boolean(event.data.refresh));
+    }
+    function onKeyDown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close(false);
+      }
+    }
+    hostWindow.addEventListener('message', onMessage);
+    hostWindow.addEventListener('keydown', onKeyDown, true);
+    frame.addEventListener('load', function () { frame.focus(); }, { once: true });
+    hostWindow.requestAnimationFrame(function () { overlay.classList.add('is-visible'); });
+    return close;
+  }
+
   async function abrirPainelRateio(selectedItemIds) {
-    var removeHostBlur = function () {};
     try {
       var selected = getRecordId(selectedItemIds);
       if (!selected || (selected && selected.count === 0)) { await alert('Nenhuma OP selecionada', 'Selecione uma OP antes de gerar os pagantes.'); return; }
-      if (selected && selected.count > 1) { await alert('Seleção múltipla', 'Selecione somente uma OP para gerar os pagantes.'); return; }
+      if (selected && selected.count > 1) { await alert('Selecao multipla', 'Selecione somente uma OP para gerar os pagantes.'); return; }
       var recordId = String(selected).replace(/[{}]/g, '').trim();
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recordId)) { await alert('OP inválida', 'Não foi possível identificar o registro selecionado.'); return; }
-      removeHostBlur = installHostBlur();
-      var result = await Xrm.Navigation.navigateTo({ pageType: 'webresource', webresourceName: 'Tela_GerarPagantes/index.html', data: JSON.stringify({ recordId: recordId }) }, { target: 2, width: { value: 820, unit: 'px' }, height: { value: 860, unit: 'px' }, position: 1 });
-      if (result && result.saved && Xrm.Page && Xrm.Page.data) Xrm.Page.data.refresh(false);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recordId)) { await alert('OP invalida', 'Nao foi possivel identificar o registro selecionado.'); return; }
+
+      try {
+        openNativeOverlay(recordId);
+      } catch (overlayError) {
+        console.warn('[Cr40fGerarPagantes] Overlay nativo indisponivel; usando dialogo oficial.', overlayError);
+        var result = await Xrm.Navigation.navigateTo({ pageType: 'webresource', webresourceName: 'Tela_GerarPagantes/index.html', data: JSON.stringify({ recordId: recordId }) }, { target: 2, width: { value: 820, unit: 'px' }, height: { value: 860, unit: 'px' }, position: 1 });
+        if (result && result.saved) refreshHost();
+      }
     } catch (error) {
       console.error('[Cr40fGerarPagantes] Falha ao abrir web resource', error);
-      await alert('Não foi possível abrir a cobrança', 'Tente novamente. Se o problema continuar, informe o horário desta tentativa ao suporte.');
-    } finally { removeHostBlur(); }
+      await alert('Nao foi possivel abrir a cobranca', 'Tente novamente. Se o problema continuar, informe o horario desta tentativa ao suporte.');
+    }
   }
 
   return { abrirPainelRateio: abrirPainelRateio };
