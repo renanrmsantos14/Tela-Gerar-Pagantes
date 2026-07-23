@@ -5,6 +5,10 @@
     <Nullable>enable</Nullable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
   </PropertyGroup>
+  <PropertyGroup Condition="Exists('$(UserProfile)\.codex\keys\Cr40f.GerarPagantes.Plugin.snk')">
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>$(UserProfile)\.codex\keys\Cr40f.GerarPagantes.Plugin.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CrmSdk.CoreAssemblies" Version="9.0.2.60" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />

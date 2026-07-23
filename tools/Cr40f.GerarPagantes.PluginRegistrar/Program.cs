@@ -1,6 +1,7 @@
 using System.Reflection;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Query;
 
 var options = Arguments.Parse(args);
@@ -25,7 +26,6 @@ const string PluginTypeName = "Cr40f.GerarPagantes.Plugin.GerarPagantesPlugin";
 const string CustomApiMessageName = "cr40f_GerarPagantes";
 const string BoundEntity = "cr40f_financeiro";
 const int PluginAssemblyComponentType = 91;
-const int MainOperationStage = 30;
 
 Log("autenticando no Dataverse");
 var connectionString = $"AuthType=OAuth;Url={environmentUrl.TrimEnd('/')};AppId=51f81489-12ee-4a9e-aaae-a2591f45987d;RedirectUri=http://localhost;LoginPrompt=Auto";
@@ -39,9 +39,7 @@ var assemblyInfo = AssemblyInfo.Read(dllPath);
 var assemblyContent = Convert.ToBase64String(File.ReadAllBytes(dllPath));
 var assemblyId = UpsertAssembly(service, assemblyInfo, assemblyContent);
 var pluginTypeId = UpsertPluginType(service, assemblyId);
-var messageId = RequireSingleId(service, "sdkmessage", ("name", CustomApiMessageName));
-var filterId = RequireMessageFilter(service, messageId, BoundEntity);
-UpsertCustomApiStep(service, pluginTypeId, messageId, filterId, unsecureConfiguration, secureConfiguration);
+EnsureCustomApi(service, pluginTypeId, solutionUniqueName, CustomApiMessageName, BoundEntity);
 EnsureSolutionComponent(service, assemblyId, solutionUniqueName, PluginAssemblyComponentType);
 
 if (publish)
@@ -98,44 +96,63 @@ static Guid UpsertPluginType(ServiceClient service, Guid assemblyId)
     });
 }
 
-static void UpsertCustomApiStep(ServiceClient service, Guid pluginTypeId, Guid messageId, Guid filterId, string? unsecureConfiguration, string? secureConfiguration)
+static Guid EnsureCustomApi(ServiceClient service, Guid pluginTypeId, string solutionUniqueName, string customApiMessageName, string boundEntity)
 {
-    var existing = FindStep(service, pluginTypeId, messageId, filterId);
-    var step = new Entity("sdkmessageprocessingstep")
-    {
-        ["name"] = "cr40f_GerarPagantes - MainOperation",
-        ["description"] = "Gerar Pagantes - Custom API MainOperation",
-        ["eventhandler"] = Ref("plugintype", pluginTypeId),
-        ["sdkmessageid"] = Ref("sdkmessage", messageId),
-        ["sdkmessagefilterid"] = Ref("sdkmessagefilter", filterId),
-        ["stage"] = new OptionSetValue(MainOperationStage),
-        ["mode"] = new OptionSetValue(0),
-        ["rank"] = 1,
-        ["supporteddeployment"] = new OptionSetValue(0)
-    };
-
+    var existing = FindSingleOrNone(service, "customapi", ("uniquename", customApiMessageName));
     if (existing is not null)
     {
-        step.Id = existing.Id;
-        // O update parcial preserva o Client ID e o secret Cielo que ja existem no ambiente.
-        Log("atualizando step da Custom API sem alterar configuracoes Cielo");
-        service.Update(step);
-        return;
+        Log($"reutilizando Custom API {customApiMessageName}");
+        service.Update(new Entity("customapi", existing.Id)
+        {
+            ["plugintypeid"] = Ref("plugintype", pluginTypeId)
+        });
+        return existing.Id;
     }
 
-    if (unsecureConfiguration is null || secureConfiguration is null)
+    Log($"criando Custom API {customApiMessageName}");
+    var customApi = new Entity("customapi")
     {
-        throw new InvalidOperationException("O step ainda nao existe. Defina CIELO_CLIENT_ID e CIELO_CLIENT_SECRET para cria-lo.");
-    }
+        ["allowedcustomprocessingsteptype"] = new OptionSetValue(0),
+        ["bindingtype"] = new OptionSetValue(1),
+        ["boundentitylogicalname"] = boundEntity,
+        ["description"] = "Gerar pagantes e substituir pagantes existentes com segurança.",
+        ["displayname"] = "Gerar Pagantes",
+        ["isfunction"] = false,
+        ["isprivate"] = false,
+        ["name"] = customApiMessageName,
+        ["plugintypeid"] = Ref("plugintype", pluginTypeId),
+        ["uniquename"] = customApiMessageName,
+        ["iscustomizable"] = new BooleanManagedProperty(false)
+    };
 
-    var secureConfigId = service.Create(new Entity("sdkmessageprocessingstepsecureconfig")
+    var createRequest = new CreateRequest { Target = customApi };
+    createRequest["SolutionUniqueName"] = solutionUniqueName;
+    var customApiId = ((CreateResponse)service.Execute(createRequest)).id;
+
+    service.Create(new Entity("customapirequestparameter")
     {
-        ["secureconfig"] = secureConfiguration
+        ["customapiid"] = Ref("customapi", customApiId),
+        ["description"] = "JSON da solicitação de geração ou substituição de pagantes.",
+        ["displayname"] = "Request JSON",
+        ["isoptional"] = false,
+        ["name"] = $"{customApiMessageName}.cr40f_RequestJson",
+        ["type"] = new OptionSetValue(10),
+        ["uniquename"] = "cr40f_RequestJson",
+        ["iscustomizable"] = new BooleanManagedProperty(false)
     });
-    step["configuration"] = unsecureConfiguration;
-    step["sdkmessageprocessingstepsecureconfigid"] = Ref("sdkmessageprocessingstepsecureconfig", secureConfigId);
-    Log("criando step da Custom API");
-    service.Create(step);
+
+    service.Create(new Entity("customapiresponseproperty")
+    {
+        ["customapiid"] = Ref("customapi", customApiId),
+        ["description"] = "JSON do resultado da operação.",
+        ["displayname"] = "Response JSON",
+        ["name"] = $"{customApiMessageName}.cr40f_ResponseJson",
+        ["type"] = new OptionSetValue(10),
+        ["uniquename"] = "cr40f_ResponseJson",
+        ["iscustomizable"] = new BooleanManagedProperty(false)
+    });
+
+    return customApiId;
 }
 
 static void EnsureSolutionComponent(ServiceClient service, Guid componentId, string solutionUniqueName, int componentType)
@@ -155,42 +172,6 @@ static void EnsureSolutionComponent(ServiceClient service, Guid componentId, str
     {
         Log($"assembly ja pertence a solucao {solutionUniqueName}");
     }
-}
-
-static Guid RequireSingleId(ServiceClient service, string logicalName, params (string Attribute, object Value)[] conditions)
-{
-    var row = FindSingleOrNone(service, logicalName, conditions);
-    return row?.Id ?? throw new InvalidOperationException($"Registro Dataverse nao encontrado: {logicalName}.");
-}
-
-static Guid RequireMessageFilter(ServiceClient service, Guid messageId, string primaryEntity)
-{
-    var query = new QueryExpression("sdkmessagefilter")
-    {
-        ColumnSet = new ColumnSet("sdkmessagefilterid"),
-        TopCount = 2
-    };
-    query.Criteria.AddCondition("sdkmessageid", ConditionOperator.Equal, messageId);
-    query.Criteria.AddCondition("primaryobjecttypecode", ConditionOperator.Equal, primaryEntity);
-    var rows = service.RetrieveMultiple(query).Entities;
-    return rows.Count == 1
-        ? rows[0].Id
-        : throw new InvalidOperationException($"Filtro da Custom API invalido para {primaryEntity}. Encontrados: {rows.Count}.");
-}
-
-static Entity? FindStep(ServiceClient service, Guid pluginTypeId, Guid messageId, Guid filterId)
-{
-    var query = new QueryExpression("sdkmessageprocessingstep")
-    {
-        ColumnSet = new ColumnSet("sdkmessageprocessingstepid"),
-        TopCount = 2
-    };
-    query.Criteria.AddCondition("eventhandler", ConditionOperator.Equal, pluginTypeId);
-    query.Criteria.AddCondition("sdkmessageid", ConditionOperator.Equal, messageId);
-    query.Criteria.AddCondition("sdkmessagefilterid", ConditionOperator.Equal, filterId);
-    var rows = service.RetrieveMultiple(query).Entities;
-    if (rows.Count > 1) throw new InvalidOperationException("Mais de um step encontrado para cr40f_GerarPagantes.");
-    return rows.SingleOrDefault();
 }
 
 static Entity? FindSingleOrNone(ServiceClient service, string logicalName, params (string Attribute, object Value)[] conditions)
