@@ -72,8 +72,13 @@ describe('submitOperation', () => {
     expect(updateRecord).not.toHaveBeenCalled()
     expect(deleteRecord).not.toHaveBeenCalled()
     const apiRequest = execute.mock.calls[0][0]
+    expect(apiRequest).toMatchObject({
+      entity: { entityType: 'cr40f_financeiro', id: financeiroId },
+      cr40f_RequestJson: JSON.stringify(request)
+    })
+    expect(apiRequest.Target).toBeUndefined()
     expect(apiRequest.getMetadata()).toEqual(expect.objectContaining({
-      boundParameter: 'Target',
+      boundParameter: 'entity',
       operationName: 'cr40f_GerarPagantes'
     }))
   })

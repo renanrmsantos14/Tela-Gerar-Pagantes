@@ -196,12 +196,12 @@ export async function submitOperation(financeiroId: Guid, request: SubmitRequest
   const online = api.online
   if (!online?.execute) throw new Error('A Custom API cr40f_GerarPagantes não está publicada neste ambiente.')
   const customApiRequest = {
-    Target: { entityType: 'cr40f_financeiro', id: financeiroId },
+    entity: { entityType: 'cr40f_financeiro', id: financeiroId },
     cr40f_RequestJson: JSON.stringify(request),
     getMetadata: () => ({
-      boundParameter: 'Target',
+      boundParameter: 'entity',
       parameterTypes: {
-        Target: { typeName: 'Microsoft.Dynamics.CRM.cr40f_financeiro', structuralProperty: 5 },
+        entity: { typeName: 'Microsoft.Dynamics.CRM.cr40f_financeiro', structuralProperty: 5 },
         cr40f_RequestJson: { typeName: 'Edm.String', structuralProperty: 1 }
       },
       operationType: 0,
