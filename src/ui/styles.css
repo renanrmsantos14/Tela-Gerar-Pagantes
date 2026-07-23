@@ -294,5 +294,6 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .payer-list-row__status { display: inline-flex; align-items: center; gap: 5px; color: var(--bt-slate-strong); font-size: 11px; white-space: nowrap; }
 .payer-list-row__status--error { color: #9f2940; }
 @media (min-width: 821px) { .popup-shell { width: min(100%, 1120px); }.payer-review .panel-heading p { font-size: 12px; } }
+@media (min-width: 821px) { .sticky-action-bar { right: auto; left: 50%; width: min(100%, 1120px); padding-inline: 24px; transform: translateX(-50%); } }
 @media (hover: hover) and (pointer: fine) { .payer-list-row:hover { border-color: #c7d2e2; background: var(--bt-soft); box-shadow: none; } }
 @media (max-width: 560px) { .payer-list-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; padding: 11px; }.payer-list-row__identity, .payer-list-row__toggles { grid-column: 1 / -1; }.payer-list-row > .ui-field > input, .payer-list-row > .ui-field > select { height: 44px; }.payer-list-row__toggles { grid-template-columns: 1fr 1fr; gap: 8px; min-height: 44px; padding-top: 9px; border-top: 1px solid var(--bt-line); }.payer-list-row__toggles .ui-switch { min-height: 36px; }.payer-list-row__status { grid-column: 1 / -1; } }
