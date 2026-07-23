@@ -14,7 +14,7 @@ button, input, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .55; }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 0; border-color: var(--bt-focus); box-shadow: 0 0 0 3px rgba(33,89,210,.11); }
-.popup-shell { width: min(100%, 820px); min-height: 100vh; margin: 0 auto; padding: 18px 20px 88px; background: var(--bt-surface); }
+.popup-stage { min-height: 100dvh; background: var(--bt-canvas); }.popup-shell { width: min(100%, 820px); min-height: 100vh; margin: 0 auto; padding: 18px 20px 88px; background: var(--bt-surface); }
 .operation-header { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding-bottom: 16px; border-bottom: 1px solid var(--bt-line); }
 .operation-header__brand, .operation-header__actions, .payer-identity__top, .panel-heading, .modal-card__header, .modal-actions, .ui-badge { display: flex; align-items: center; }
 .operation-header__brand { gap: 10px; }.operation-header__actions { gap: 10px; }.operation-mark { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 11px; background: var(--bt-blue); color: #fff; box-shadow: 0 10px 24px rgba(33,89,210,.22); }

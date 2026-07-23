@@ -108,7 +108,7 @@ export function App() {
 
   const actionHint = !selectionComplete ? 'Escolha os pagantes e avance' : errors.length ? 'Revise os campos pendentes' : 'Rateio pronto para gerar'
 
-  return <PopupShell>
+  return <PopupShell onBackdropClick={isEmbedded ? () => closeEmbedded(false) : undefined}>
     <OperationHeader displayId={operation.displayId} serviceCount={operation.serviceCount} balanced={remaining === 0} onRefresh={() => void refresh()} onClose={isEmbedded ? () => closeEmbedded(true) : undefined} />
     {notice ? <FeedbackNotice {...notice} /> : null}
     <AllocationSummary totalCents={operation.totalCents} allocatedCents={totalRateado} remainingCents={remaining} />
