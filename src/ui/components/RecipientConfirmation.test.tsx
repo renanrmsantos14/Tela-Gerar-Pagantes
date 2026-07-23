@@ -10,16 +10,16 @@ describe('RecipientConfirmation', () => {
   it('mantém recibo no pagante e permite escolher outra pessoa com e-mail', () => {
     const onChange = vi.fn()
     render(<RecipientConfirmation payers={[juliana]} people={[juliana, deborah]} onChange={onChange} onBack={vi.fn()} />)
-    expect(screen.getByText('Link e recibo em nome de Juliana Rodrigues')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /outra pessoa/i }))
-    fireEvent.click(screen.getByRole('button', { name: /deborah/i }))
+    expect(screen.getByText('Juliana Rodrigues', { selector: '.recipient-card__receipt strong' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /alterar destinatário/i }))
+    fireEvent.click(screen.getByRole('radio', { name: /deborah/i }))
     expect(onChange).toHaveBeenCalledWith(juliana.id, deborah)
   })
 
   it('não permite escolher pessoa sem e-mail', () => {
     const withoutEmail: Person = { ...deborah, id: '10000000-0000-0000-0000-000000000003', name: 'Sem E-mail', email: '' }
     render(<RecipientConfirmation payers={[juliana]} people={[withoutEmail]} onChange={vi.fn()} onBack={vi.fn()} />)
-    fireEvent.click(screen.getByRole('button', { name: /outra pessoa/i }))
-    expect(screen.getByRole('button', { name: /sem e-mail/i }).hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: /alterar destinatário/i }))
+    expect(screen.getByRole('radio', { name: /sem e-mail/i }).hasAttribute('disabled')).toBe(true)
   })
 })
