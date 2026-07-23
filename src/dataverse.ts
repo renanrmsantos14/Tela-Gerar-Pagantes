@@ -403,12 +403,32 @@ async function startGerarPagantesFlow(url: string, financeiroId: Guid, request: 
     const timeout = window.setTimeout(() => controller.abort(), 15000)
     try {
       response = await fetch(url, { method: 'POST', mode: 'cors', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body, signal: controller.signal })
-      result = await response.json().catch(() => null) as FlowHttpResponse | null
+      const responseText = await response.text()
+      try {
+        result = responseText ? JSON.parse(responseText) as FlowHttpResponse : null
+      } catch {
+        result = null
+      }
       if (response.ok && result?.success) break
+      const responseDetail = result?.message || responseText.trim().slice(0, 1000) || response.statusText
+      lastError = new Error(`Flow HTTP retornou ${response.status}${responseDetail ? `: ${responseDetail}` : '.'}`)
+      console.error('[GerarPagantes] Falha HTTP ao acionar Flow.', {
+        attempt: attempt + 1,
+        requestId: request.requestId,
+        status: response.status,
+        statusText: response.statusText,
+        response: responseText.slice(0, 1000)
+      })
       if (response.status < 500 && response.status !== 408 && response.status !== 429) break
-      lastError = new Error(result?.message || `Flow HTTP retornou ${response.status}.`)
     } catch (error) {
-      lastError = error
+      lastError = error instanceof DOMException && error.name === 'AbortError'
+        ? new Error('Flow HTTP excedeu o limite de 15 segundos.')
+        : error
+      console.error('[GerarPagantes] Erro de rede ao acionar Flow.', {
+        attempt: attempt + 1,
+        requestId: request.requestId,
+        error: lastError
+      })
     } finally {
       window.clearTimeout(timeout)
     }
