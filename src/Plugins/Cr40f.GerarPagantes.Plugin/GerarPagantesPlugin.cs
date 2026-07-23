@@ -48,7 +48,7 @@ public sealed class GerarPagantesPlugin : IPlugin
             if (request.RequestId == Guid.Empty) throw new InvalidPluginExecutionException("requestId é obrigatório.");
             if (IsProcessed(service, request.RequestId)) throw new InvalidPluginExecutionException("Esta solicitação já foi processada.");
             _settings.ValidateFor(request);
-            var finance = service.Retrieve(Financeiro, target.Id, new ColumnSet("versionnumber", "cr40f_id", "statecode", "statuscode", "ownerid"));
+            var finance = service.Retrieve(Financeiro, target.Id, new ColumnSet("versionnumber", "statecode", "statuscode", "ownerid"));
             ValidateOperationAccess(service, context, finance);
             ValidateVersion(finance, request.ExpectedFinanceiroVersion);
             var totalCents = CalculateOperationTotal(service, target.Id);
