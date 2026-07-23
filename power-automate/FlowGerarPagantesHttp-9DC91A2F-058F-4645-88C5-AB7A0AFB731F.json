@@ -18,6 +18,15 @@
           "connectionReferenceLogicalName": "new_sharedoffice365_de4c0"
         },
         "runtimeSource": "embedded"
+      },
+      "shared_sharepointonline": {
+        "api": {
+          "name": "shared_sharepointonline"
+        },
+        "connection": {
+          "connectionReferenceLogicalName": "new_sharedsharepointonline_40934"
+        },
+        "runtimeSource": "embedded"
       }
     },
     "definition": {
@@ -156,8 +165,8 @@
             "body": {
               "success": true,
               "requestId": "@body('Parse_JSON_Payload')?['requestId']",
-                "message": "Processamento concluido.",
-                "results": "@body('Select_Resultados_Por_Pagante')"
+              "message": "Processamento concluido.",
+              "results": "@body('Select_Resultados_Por_Pagante')"
             }
           },
           "runAfter": {
@@ -341,9 +350,9 @@
                       "type": "OpenApiConnection",
                       "inputs": {
                         "parameters": {
-                          "emailMessage/To": "@items('Apply_to_each_Pagante')?['email']",
-                          "emailMessage/Subject": "Link de pagamento @{body('Parse_JSON_Payload')?['financeiroDisplayId']}",
-                          "emailMessage/Body": "<p>Ola @{items('Apply_to_each_Pagante')?['name']},</p><p>Segue o link de pagamento referente aos servicos Betinhos:</p><p><a href=\"@{body('HTTP_Gerar_Link_Cielo')?['shortUrl']}\">Abrir link de pagamento</a></p><p>Financeiro Betinhos</p>",
+                          "emailMessage/To": "noreply@betinhos.onmicrosoft.com;financeiro@betinhos.com.br;junior@betinhos.com.br;@{items('Apply_to_each_Pagante')?['email']}",
+                          "emailMessage/Subject": "Link de Pagamento @{body('Parse_JSON_Payload')?['financeiroDisplayId']} para @{items('Apply_to_each_Pagante')?['name']} | Betinhos Executive Service",
+                          "emailMessage/Body": "<meta>\n<title>Letras Maiúsculas</title>\n<style>\n    /* Your existing CSS remains here. Note: external CSS support varies in email clients. */\n    @font-face { font-family: \"Cambria Math\"; }\n    @font-face { font-family: Calibri; }\n    @font-face { font-family: Aptos; }\n    @font-face { font-family: Seaford; }\n    @font-face { font-family: \"Segoe UI\"; }\n\n    p.MsoNormal, li.MsoNormal, div.MsoNormal {\n        margin: 0cm;\n        font-size: 12.0pt;\n        font-family: \"Aptos\", sans-serif;\n    }\n\n    a:link, span.MsoHyperlink {\n        color: #467886;\n        text-decoration: underline;\n    }\n\n    a:visited, span.MsoHyperlinkFollowed {\n        color: #96607D;\n        text-decoration: underline;\n    }\n\n    p.xmsonormal, li.xmsonormal, div.xmsonormal {\n        margin: 0cm;\n        font-size: 13.5pt;\n        font-family: \"Aptos\", sans-serif;\n    }\n\n    .MsoNormalTable {\n        border-collapse: collapse;\n    }\n\n    .MsoTableGrid {\n        border-collapse: collapse;\n        border: none;\n    }\n</style>\n\n<table border=\"0\" cellpadding=\"0\" cellspacing=\"0\">\n    <tbody><tr>\n        <td>\n            <div>\n                <table class=\"MsoNormalTable\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse; width:625.5pt;\">\n                    <tbody>\n                        <tr style=\"height:89.25pt\">\n                            <td style=\"width:625.5pt; border:none; border-bottom:solid windowtext 1.0pt; background:#F2F2F2; padding:0cm; height:89.25pt\">\n                                <p class=\"xmsonormal\">\n                                    <span style=\"color:black\">\n                                        <img width=\"833\" height=\"146\" src=\"@{outputs('Compose_Imagem_Cabecalho')}\">\n                                    </span>\n                                </p>\n                            </td>\n                        </tr>\n                        <tr style=\"height:86.0pt\">\n                            <td style=\"width:625.5pt; background:#F2F2F2; padding:0cm; height:86.0pt\">\n                                <p class=\"xmsonormal\" style=\"margin-left:35.4pt; line-height:200%\">\n                                    <span style=\"font-size:12.0pt; line-height:200%;\">&nbsp;</span>\n                                </p>\n                                <p class=\"xmsonormal\" style=\"margin-left:35.4pt; margin-right:35.4pt; line-height:200%\">\n                                    <span style=\"font-size:11.0pt; line-height:200%; font-family:'Segoe UI',sans-serif; color:black\">Olá @{items('Apply_to_each_Pagante')?['name']} <b style=\"text-transform: uppercase;\"></b>, </span>\n                                </p>\n                                <p class=\"xmsonormal\" style=\"margin-left:35.4pt; margin-right:35.4pt; line-height:200%\">\n                                    <span style=\"font-size:11.0pt; line-height:200%; font-family:'Segoe UI',sans-serif; color:black\">Segue abaixo o link de pagamento referente aos serviços prestados no(s) dia(s) @{outputs('Compose_Primeira_Data_Servico')} @{outputs('Compose_Ultima_Data_Servico')}  na quantia de @{outputs('Compose_Valor_Formatado')}</span>\n                                </p>\n                                <p class=\"xmsonormal\" style=\"margin-left:35.4pt; line-height:200%\">\n                                    <span style=\"font-size:11.0pt; line-height:200%; font-family:'Segoe UI',sans-serif; color:black\">Obrigado por viajar com a <b>Betinhos</b>! </span>\n                                </p>\n                                <p class=\"xmsonormal\" style=\"margin-left:35.4pt; line-height:200%\">\n                                    <span style=\"font-size:11.0pt; line-height:200%; font-family:Seaford;\">&nbsp;</span>\n                                </p>\n                            </td>\n                        </tr>\n                        <tr style=\"height:30.45pt\"> <td style=\"width:625.5pt; background:#F2F2F2; padding:0cm; height:30.45pt; vertical-align:middle;\">\n                                <table class=\"MsoTableGrid\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\" style=\"width:100%; border-collapse:collapse;\">\n                                    <tbody><tr style=\"height:30.45pt;\">\n                                        <td style=\"width:209.975pt; background:#F2F2F2; padding:0cm; vertical-align:middle;\">\n                                            <p class=\"xmsonormal\" style=\"text-align:center; margin:0;\">&nbsp;</p>\n                                        </td>\n                                        <td style=\"width:205.55pt; background:#091424; padding:0cm; vertical-align:middle;\">\n                                            <p class=\"xmsonormal\" style=\"text-align:center; margin:0;\">\n                                                <b><span style=\"font-size:11.0pt; color:#F2F2F2;\">\n                                                    <a href=\"@{body('HTTP_Gerar_Link_Cielo')?['shortUrl']}\" style=\"color:#F2F2F2; text-decoration:none; display:block; padding:0cm;\">LINK DE PAGAMENTO</a>\n                                                </span></b>\n                                            </p>\n                                        </td>\n                                        <td style=\"width:209.975pt; background:#F2F2F2; padding:0cm; vertical-align:middle;\">\n                                            <p class=\"xmsonormal\" style=\"text-align:center; margin:0;\">&nbsp;</p>\n                                        </td>\n                                    </tr>\n                                    </tbody>\n                                </table>\n                            </td>\n                        </tr>\n                        <tr style=\"height:39.7pt\">\n                            <td style=\"width:625.5pt; border:none; border-bottom:solid #D9D9D9 2.25pt; background:#F2F2F2; padding:0cm 5.4pt; height:39.7pt\">\n                                <p class=\"xmsonormal\">&nbsp;</p> </td>\n                        </tr>\n                        <tr style=\"height:24.35pt\">\n                            <td style=\"width:625.5pt; border:none; border-top:solid #D9D9D9 2.25pt; background:#F2F2F2; padding:0cm 5.4pt; height:24.35pt\">\n                                <p class=\"xmsonormal\" style=\"text-align:center\">\n                                    <span style=\"font-size:10.0pt; color:black\">\n                                        <img width=\"818\" height=\"62\" src=\"@{outputs('Compose_Imagem_Instrucoes_Cabecalho')}\"> </span>\n                                </p>\n                            </td>\n                        </tr>\n                        <tr style=\"height:24.35pt\">\n                            <td style=\"width:625.5pt; border:none; border-bottom:solid #D9D9D9 2.25pt; background:#F2F2F2; padding:0cm 5.4pt; height:24.35pt\">\n                                <p class=\"xmsonormal\" style=\"text-align:center\">\n                                    <span style=\"color:black\">\n                                        <img width=\"814\" height=\"306\" src=\"@{outputs('Compose_Imagem_Instrucoes')}\">\n                                    </span>\n                                </p>\n                            </td>\n                        </tr>\n                        <tr style=\"height:30.0pt\">\n                            <td style=\"width:625.5pt; border-top:solid #D9D9D9 2.25pt; border-left:solid windowtext 1.0pt; border-bottom:solid #D9D9D9 2.25pt; border-right:none; background:#091424; padding:0cm 5.4pt; height:30.0pt\">\n                                <p class=\"xmsonormal\" style=\"text-align:center; margin:0;\">\n                                    <a href=\"https://forms.office.com/r/Bn8aqiTuZf\" style=\"display:block; width:100%; height:100%; text-decoration:none;\">\n                                        <span style=\"color:white;\">\n                                            <img width=\"796\" height=\"41\" src=\"@{outputs('Compose_Imagem_Conte_Viagem')}\" alt=\"Conte como foi a viagem\" style=\"display:block;\">\n                                        </span>\n                                    </a>\n                                </p>\n                            </td>\n                        </tr>\n                        <tr style=\"height:91.75pt\">\n                            <td style=\"width:625.5pt; border:solid white 1.5pt; border-top:solid #D9D9D9 2.25pt; background:#091424; padding:0cm 5.4pt; height:91.75pt\">\n                                <table class=\"MsoNormalTable\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\" style=\"width:100%; border-collapse:collapse;\">\n                                    <tbody><tr style=\"height:7.55pt\">\n                                        <td style=\"width:33.33%; padding:0cm 5.4pt; height:7.55pt; text-align:center;\"><p class=\"xmsonormal\"><span style=\"color:white\">&nbsp;</span></p></td>\n                                        <td style=\"width:33.33%; padding:0cm 5.4pt; height:7.55pt; text-align:center;\"><p class=\"xmsonormal\"><span style=\"color:white\">&nbsp;</span></p></td>\n                                        <td style=\"width:33.33%; padding:0cm 5.4pt; height:7.55pt; text-align:center;\"><p class=\"xmsonormal\"><span style=\"color:white\">&nbsp;</span></p></td>\n                                    </tr>\n                                    <tr style=\"height:22.65pt\">\n                                        <td style=\"width:33.33%; border-right:solid #D9D9D9 1.0pt; padding:0cm 5.4pt; height:22.65pt; text-align:center; vertical-align:middle;\">\n                                            <img width=\"26\" height=\"26\" src=\"@{outputs('Compose_Imagem_Icone_Financeiro')}\">\n                                        </td>\n                                        <td style=\"width:33.33%; border-right:solid #D9D9D9 1.0pt; border-left:solid #D9D9D9 1.0pt; padding:0cm 5.4pt; height:22.65pt; text-align:center; vertical-align:middle;\">\n                                            <img width=\"25\" height=\"25\" src=\"@{outputs('Compose_Imagem_Icone_Operacional')}\">\n                                        </td>\n                                        <td style=\"width:33.33%; border-left:solid #D9D9D9 1.0pt; padding:0cm 5.4pt; height:22.65pt; text-align:center; vertical-align:middle;\">\n                                            <img width=\"27\" height=\"27\" src=\"@{outputs('Compose_Imagem_Icone_Comercial')}\">\n                                        </td>\n                                    </tr>\n                                    <tr style=\"height:51.4pt\">\n                                        <td style=\"width:33.33%; border-right:solid #D9D9D9 1.0pt; padding:0cm 5.4pt; height:51.4pt; text-align:center; vertical-align:top;\">\n                                            <p class=\"xmsonormal\" style=\"text-align:center\"><b><span style=\"font-size:12.0pt; color:white\">Financeiro</span></b></p>\n                                            <p class=\"xmsonormal\" style=\"text-align:center\"><span style=\"font-size:12.0pt; color:white\">+55 12 99615-9085</span></p>\n                                            <p class=\"xmsonormal\" style=\"text-align:center\"><a href=\"mailto:financeiro@betinhos.com.br\"><span style=\"font-size:12.0pt;\">financeiro@betinhos.com.br</span></a></p>\n                                        </td>\n                                        <td style=\"width:33.33%; border-right:solid #D9D9D9 1.0pt; border-left:solid #D9D9D9 1.0pt; padding:0cm 5.4pt; height:51.4pt; text-align:center; vertical-align:top;\">\n                                            <p class=\"xmsonormal\" style=\"text-align:center\"><b><span style=\"font-size:12.0pt; color:white\">Operacional</span></b></p>\n                                            <p class=\"xmsonormal\" style=\"text-align:center\"><span style=\"font-size:12.0pt; color:white\">+55 12 99615-9093</span></p>\n                                            <p class=\"xmsonormal\" style=\"text-align:center\"><a href=\"mailto:deborah.keila@betinhos.com.br\"><span style=\"font-size:12.0pt;\">deborah.keila@betinhos.com.br</span></a></p>\n                                        </td>\n                                        <td style=\"width:33.33%; border-left:solid #D9D9D9 1.0pt; padding:0cm 5.4pt; height:51.4pt; text-align:center; vertical-align:top;\">\n                                            <p class=\"xmsonormal\" style=\"text-align:center\"><b><span style=\"font-size:12.0pt; color:white\">Comercial</span></b></p>\n                                            <p class=\"xmsonormal\" style=\"text-align:center\"><span style=\"font-size:12.0pt; color:white\">+55 12 99723-6961</span></p>\n                                            <p class=\"xmsonormal\" style=\"text-align:center\"><a href=\"mailto:junior@betinhos.com\"><span style=\"font-size:12.0pt;\">junior@betinhos.com</span></a></p>\n                                        </td>\n                                    </tr>\n                                    <tr style=\"height:7.45pt\">\n                                        <td style=\"width:33.33%; padding:0cm 5.4pt; height:7.45pt; text-align:center;\"><p class=\"xmsonormal\"><span style=\"color:white\">&nbsp;</span></p></td>\n                                        <td style=\"width:33.33%; padding:0cm 5.4pt; height:7.45pt; text-align:center;\"><p class=\"xmsonormal\"><span style=\"color:white\">&nbsp;</span></p></td>\n                                        <td style=\"width:33.33%; padding:0cm 5.4pt; height:7.45pt; text-align:center;\"><p class=\"xmsonormal\"><span style=\"color:white\">&nbsp;</span></p></td>\n                                    </tr>\n                                    </tbody>\n                                </table>\n                            </td>\n                        </tr>\n                    </tbody>\n                </table>\n                <p class=\"MsoNormal\"><span style=\"font-size:10.0pt\">&nbsp;</span></p>\n            </div>\n        </td>\n    </tr>\n</tbody></table>",
                           "emailMessage/From": "noreply@betinhos.com.br",
                           "emailMessage/ReplyTo": "financeiro@betinhos.com.br",
                           "emailMessage/Importance": "Normal"
@@ -353,6 +362,11 @@
                           "operationId": "SendEmailV2",
                           "connectionName": "shared_office365"
                         }
+                      },
+                      "runAfter": {
+                        "Compose_Valor_Formatado": [
+                          "Succeeded"
+                        ]
                       }
                     },
                     "Update_Pagante_Email_Sucesso": {
@@ -451,6 +465,232 @@
                       },
                       "runAfter": {
                         "Update_Pagante_Email_Erro": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Compose_Primeira_Data_Servico": {
+                      "type": "Compose",
+                      "inputs": "@if(empty(body('Parse_JSON_Payload')?['serviceStartDate']), '', formatDateTime(body('Parse_JSON_Payload')?['serviceStartDate'], 'dd/MM/yyyy'))",
+                      "runAfter": {}
+                    },
+                    "Compose_Ultima_Data_Servico": {
+                      "type": "Compose",
+                      "inputs": "@if(or(empty(body('Parse_JSON_Payload')?['serviceEndDate']), equals(body('Parse_JSON_Payload')?['serviceEndDate'], body('Parse_JSON_Payload')?['serviceStartDate'])), '', concat('- ', formatDateTime(body('Parse_JSON_Payload')?['serviceEndDate'], 'dd/MM/yyyy')))",
+                      "runAfter": {
+                        "Compose_Primeira_Data_Servico": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Get_Imagem_Icone_Financeiro": {
+                      "type": "OpenApiConnection",
+                      "inputs": {
+                        "parameters": {
+                          "dataset": "https://betinhos.sharepoint.com/sites/BetinhosExecutive",
+                          "id": "%252fDocumentos%2bCompartilhados%252fImagens%252fImagens%2bPadr%25c3%25a3o%252f%25c3%258dcone%2bFinanceiro.png",
+                          "inferContentType": true
+                        },
+                        "host": {
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                          "operationId": "GetFileContent",
+                          "connectionName": "shared_sharepointonline"
+                        }
+                      },
+                      "runAfter": {
+                        "Compose_Ultima_Data_Servico": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Compose_Imagem_Icone_Financeiro": {
+                      "type": "Compose",
+                      "inputs": "@dataUri(body('Get_Imagem_Icone_Financeiro'))",
+                      "runAfter": {
+                        "Get_Imagem_Icone_Financeiro": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Get_Imagem_Conte_Viagem": {
+                      "type": "OpenApiConnection",
+                      "inputs": {
+                        "parameters": {
+                          "dataset": "https://betinhos.sharepoint.com/sites/BetinhosExecutive",
+                          "id": "%252fDocumentos%2bCompartilhados%252fImagens%252fImagens%2bPadr%25c3%25a3o%252fConte%2bComo%2bFoi%2ba%2bViagem.jpg",
+                          "inferContentType": true
+                        },
+                        "host": {
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                          "operationId": "GetFileContent",
+                          "connectionName": "shared_sharepointonline"
+                        }
+                      },
+                      "runAfter": {
+                        "Compose_Imagem_Icone_Financeiro": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Compose_Imagem_Conte_Viagem": {
+                      "type": "Compose",
+                      "inputs": "@dataUri(body('Get_Imagem_Conte_Viagem'))",
+                      "runAfter": {
+                        "Get_Imagem_Conte_Viagem": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Get_Imagem_Instrucoes": {
+                      "type": "OpenApiConnection",
+                      "inputs": {
+                        "parameters": {
+                          "dataset": "https://betinhos.sharepoint.com/sites/BetinhosExecutive",
+                          "id": "%252fDocumentos%2bCompartilhados%252fImagens%252fEmail%2bde%2bLink%2bde%2bPagamento%252finstrucoes%2blink.jpg",
+                          "inferContentType": true
+                        },
+                        "host": {
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                          "operationId": "GetFileContent",
+                          "connectionName": "shared_sharepointonline"
+                        }
+                      },
+                      "runAfter": {
+                        "Compose_Imagem_Conte_Viagem": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Compose_Imagem_Instrucoes": {
+                      "type": "Compose",
+                      "inputs": "@dataUri(body('Get_Imagem_Instrucoes'))",
+                      "runAfter": {
+                        "Get_Imagem_Instrucoes": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Get_Imagem_Instrucoes_Cabecalho": {
+                      "type": "OpenApiConnection",
+                      "inputs": {
+                        "parameters": {
+                          "dataset": "https://betinhos.sharepoint.com/sites/BetinhosExecutive",
+                          "id": "%252fDocumentos%2bCompartilhados%252fImagens%252fEmail%2bde%2bLink%2bde%2bPagamento%252finstrucoes%2bcabecalho%2blink.jpg",
+                          "inferContentType": true
+                        },
+                        "host": {
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                          "operationId": "GetFileContent",
+                          "connectionName": "shared_sharepointonline"
+                        }
+                      },
+                      "runAfter": {
+                        "Compose_Imagem_Instrucoes": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Compose_Imagem_Instrucoes_Cabecalho": {
+                      "type": "Compose",
+                      "inputs": "@dataUri(body('Get_Imagem_Instrucoes_Cabecalho'))",
+                      "runAfter": {
+                        "Get_Imagem_Instrucoes_Cabecalho": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Get_Imagem_Cabecalho": {
+                      "type": "OpenApiConnection",
+                      "inputs": {
+                        "parameters": {
+                          "dataset": "https://betinhos.sharepoint.com/sites/BetinhosExecutive",
+                          "id": "%252fDocumentos%2bCompartilhados%252fImagens%252fEmail%2bde%2bLink%2bde%2bPagamento%252fCabe%25c3%25a7alho.png",
+                          "inferContentType": true
+                        },
+                        "host": {
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                          "operationId": "GetFileContent",
+                          "connectionName": "shared_sharepointonline"
+                        }
+                      },
+                      "runAfter": {
+                        "Compose_Imagem_Instrucoes_Cabecalho": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Compose_Imagem_Cabecalho": {
+                      "type": "Compose",
+                      "inputs": "@dataUri(body('Get_Imagem_Cabecalho'))",
+                      "runAfter": {
+                        "Get_Imagem_Cabecalho": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Get_Imagem_Icone_Operacional": {
+                      "type": "OpenApiConnection",
+                      "inputs": {
+                        "parameters": {
+                          "dataset": "https://betinhos.sharepoint.com/sites/BetinhosExecutive",
+                          "id": "%252fDocumentos%2bCompartilhados%252fImagens%252fImagens%2bPadr%25c3%25a3o%252f%25c3%258dcone%2bOperacional.png",
+                          "inferContentType": true
+                        },
+                        "host": {
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                          "operationId": "GetFileContent",
+                          "connectionName": "shared_sharepointonline"
+                        }
+                      },
+                      "runAfter": {
+                        "Compose_Imagem_Cabecalho": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Compose_Imagem_Icone_Operacional": {
+                      "type": "Compose",
+                      "inputs": "@dataUri(body('Get_Imagem_Icone_Operacional'))",
+                      "runAfter": {
+                        "Get_Imagem_Icone_Operacional": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Get_Imagem_Icone_Comercial": {
+                      "type": "OpenApiConnection",
+                      "inputs": {
+                        "parameters": {
+                          "dataset": "https://betinhos.sharepoint.com/sites/BetinhosExecutive",
+                          "id": "%252fDocumentos%2bCompartilhados%252fImagens%252fImagens%2bPadr%25c3%25a3o%252f%25c3%258dcone%2bComercial.png",
+                          "inferContentType": true
+                        },
+                        "host": {
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                          "operationId": "GetFileContent",
+                          "connectionName": "shared_sharepointonline"
+                        }
+                      },
+                      "runAfter": {
+                        "Compose_Imagem_Icone_Operacional": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Compose_Imagem_Icone_Comercial": {
+                      "type": "Compose",
+                      "inputs": "@dataUri(body('Get_Imagem_Icone_Comercial'))",
+                      "runAfter": {
+                        "Get_Imagem_Icone_Comercial": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Compose_Valor_Formatado": {
+                      "type": "Compose",
+                      "inputs": "@concat('R$ ', replace(formatNumber(div(float(coalesce(items('Apply_to_each_Pagante')?['amountCents'], 0)), 100), '0.00'), '.', ','))",
+                      "runAfter": {
+                        "Compose_Imagem_Icone_Comercial": [
                           "Succeeded"
                         ]
                       }
