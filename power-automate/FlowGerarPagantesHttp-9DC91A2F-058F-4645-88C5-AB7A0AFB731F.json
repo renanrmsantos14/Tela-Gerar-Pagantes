@@ -165,7 +165,7 @@
             "body": {
               "success": true,
               "requestId": "@body('Parse_JSON_Payload')?['requestId']",
-              "message": "Processamento concluido.",
+              "message": "Processamento concluído.",
               "results": "@body('Select_Resultados_Por_Pagante')"
             }
           },
@@ -286,7 +286,7 @@
                       },
                       "type": "Service",
                       "name": "@{body('Parse_JSON_Payload')?['financeiroDisplayId']} | @{items('Apply_to_each_Pagante')?['name']}",
-                      "description": "Servicos prestados de transporte no periodo @{if(empty(body('Parse_JSON_Payload')?['serviceStartDate']), '', formatDateTime(body('Parse_JSON_Payload')?['serviceStartDate'], 'dd/MM/yyyy'))} - @{if(empty(body('Parse_JSON_Payload')?['serviceEndDate']), '', formatDateTime(body('Parse_JSON_Payload')?['serviceEndDate'], 'dd/MM/yyyy'))}",
+                      "description": "Serviços prestados de transporte no período @{if(empty(body('Parse_JSON_Payload')?['serviceStartDate']), '', formatDateTime(body('Parse_JSON_Payload')?['serviceStartDate'], 'dd/MM/yyyy'))} - @{if(empty(body('Parse_JSON_Payload')?['serviceEndDate']), '', formatDateTime(body('Parse_JSON_Payload')?['serviceEndDate'], 'dd/MM/yyyy'))}",
                       "showDescription": true,
                       "price": "@{items('Apply_to_each_Pagante')?['amountCents']}",
                       "maxNumberOfInstallments": 1,
@@ -453,7 +453,7 @@
                         "parameters": {
                           "emailMessage/To": "noreply@betinhos.onmicrosoft.com;junior@betinhos.com.br;financeiro@betinhos.com.br",
                           "emailMessage/Subject": "ERRO NO FLOW - Flow Gerar Pagantes HTTP",
-                          "emailMessage/Body": "<p>Falha ao enviar link de pagamento para @{items('Apply_to_each_Pagante')?['email']}.</p><p>Consulte o campo Erro Envio Email no Pagante e o histórico do Flow.</p>",
+                          "emailMessage/Body": "<p>Falha ao enviar link de pagamento para @{items('Apply_to_each_Pagante')?['email']}.</p><p>Consulte o campo Erro de Envio de E-mail no Pagante e o histórico do Flow.</p>",
                           "emailMessage/From": "noreply@betinhos.com.br",
                           "emailMessage/Importance": "High"
                         },
@@ -767,7 +767,7 @@
                     "parameters": {
                       "emailMessage/To": "noreply@betinhos.onmicrosoft.com;junior@betinhos.com.br;financeiro@betinhos.com.br",
                       "emailMessage/Subject": "ERRO NO FLOW - Flow Gerar Pagantes HTTP",
-                      "emailMessage/Body": "<p>Falha ao gerar link Cielo para @{items('Apply_to_each_Pagante')?['name']}.</p><p>Consulte o campo Erro Geracao Link no Pagante e o histórico do Flow.</p>",
+                      "emailMessage/Body": "<p>Falha ao gerar link Cielo para @{items('Apply_to_each_Pagante')?['name']}.</p><p>Consulte o campo Erro de Geração de Link no Pagante e o histórico do Flow.</p>",
                       "emailMessage/From": "noreply@betinhos.com.br",
                       "emailMessage/Importance": "High"
                     },

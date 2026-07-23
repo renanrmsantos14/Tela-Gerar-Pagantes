@@ -21,7 +21,7 @@ describe('logAppError', () => {
     }))
   })
 
-  it('nao propaga falha do proprio logger', async () => {
+  it('não propaga falha do próprio logger', async () => {
     window.Xrm = { WebApi: { retrieveRecord: vi.fn(), retrieveMultipleRecords: vi.fn(), createRecord: vi.fn().mockRejectedValue(new Error('Dataverse indisponivel')), updateRecord: vi.fn(), deleteRecord: vi.fn() } }
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 

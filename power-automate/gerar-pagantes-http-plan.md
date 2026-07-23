@@ -8,7 +8,7 @@ Substituir a Custom API/plugin do fluxo principal por:
 2. Web Resource chama um Flow HTTP.
 3. Flow gera link Cielo, envia e-mail e grava status/erro no Dataverse.
 
-O Flow deve ser facil de operar: cada erro fica visivel no historico do Power Automate e tambem nos campos do registro `Pagantes`.
+O Flow deve ser fácil de operar: cada erro fica visível no histórico do Power Automate e também nos campos do registro `Pagantes`.
 
 ## Referencia copiada do Flow antigo
 
@@ -71,7 +71,7 @@ Payload esperado:
    - Primeira acao: `Parse_JSON_Payload` com `json(triggerBody())` e o schema acima.
 
 2. `Response_Accepted`
-   - Responder rapidamente `202` ou `200` para o Web Resource nao ficar preso na geracao.
+   - Responder rapidamente `202` ou `200` para o Web Resource não ficar preso na geração.
    - Corpo:
      - `success: true`
      - `requestId`
@@ -81,7 +81,7 @@ Payload esperado:
    - Filtrar `pagantes` onde `generateLink = true`.
 
 4. `Condition_Tem_Link`
-   - Se nao houver link para gerar, encerrar com sucesso.
+   - Se não houver link para gerar, encerrar com sucesso.
    - Se houver, obter token Cielo uma vez.
 
 5. `HTTP_Obter_Access_Token`
@@ -106,7 +106,7 @@ Payload esperado:
   "shipping": { "type": "WithoutShipping" },
   "type": "Service",
   "name": "@{triggerBody()?['financeiroDisplayId']} | @{items('Apply_to_each_Pagante')?['name']}",
-  "description": "Servicos prestados de transporte no periodo @{if(empty(triggerBody()?['serviceStartDate']), '', formatDateTime(triggerBody()?['serviceStartDate'], 'dd/MM/yyyy'))} - @{if(empty(triggerBody()?['serviceEndDate']), '', formatDateTime(triggerBody()?['serviceEndDate'], 'dd/MM/yyyy'))}",
+  "description": "Serviços prestados de transporte no período @{if(empty(triggerBody()?['serviceStartDate']), '', formatDateTime(triggerBody()?['serviceStartDate'], 'dd/MM/yyyy'))} - @{if(empty(triggerBody()?['serviceEndDate']), '', formatDateTime(triggerBody()?['serviceEndDate'], 'dd/MM/yyyy'))}",
   "showDescription": true,
   "price": "@{items('Apply_to_each_Pagante')?['amountCents']}",
   "maxNumberOfInstallments": 1,
@@ -158,7 +158,7 @@ Campos ja previstos no repo:
 
 Valores confirmados por codigo local:
 
-- `202410000`: nao aplicavel para e-mail quando nao envia.
+- `202410000`: não aplicável para e-mail quando não envia.
 - `202410001`: pendente.
 - `202410002`: gerado para link no plugin atual.
 
@@ -168,7 +168,7 @@ Pendente confirmar antes de publicar:
 - valor de choice para link com erro.
 - valor de choice para e-mail com erro.
 
-Nao inventar esses valores no Flow. Confirmar por metadata Dataverse antes do deploy.
+Não inventar esses valores no Flow. Confirmar por metadata Dataverse antes do deploy.
 
 ## Web Resource
 
