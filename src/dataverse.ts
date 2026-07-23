@@ -20,6 +20,8 @@ const linkStatusNotApplicable = 202410000
 const linkStatusPending = 202410001
 const payerStatusPending = 202410001
 const flowUrlEnvironmentVariable = 'new_FlowURLGerarPagantesHttp'
+const paymentMethods = new Set([202410000, 202410001, 202410002])
+const paidStatuses = new Set(['Pago', 'Autorizado'])
 
 function getXrm(): XrmApi | undefined {
   if (window.Xrm) return window.Xrm
@@ -91,7 +93,7 @@ function toPayer(row: Record<string, unknown>, people: Map<Guid, Person>): Payer
 }
 
 async function fetchExistingPayers(recordId: Guid): Promise<Array<Record<string, unknown>>> {
-  const baseSelect = 'cr40f_pagantesid,_cr40f_bancodedados_value,cr40f_valor,cr40f_formadepagamento,cr40f_status,cr40f_statusgeracaolink,cr40f_statusenvioemail,cr40f_linkdepagamento,cr40f_cielolinkid,cr40f_cieloordernumber'
+  const baseSelect = 'cr40f_pagantesid,_cr40f_financeiro_value,_cr40f_bancodedados_value,cr40f_valor,cr40f_formadepagamento,cr40f_status,cr40f_statusgeracaolink,cr40f_statusenvioemail,cr40f_linkdepagamento,cr40f_cielolinkid,cr40f_cieloordernumber'
   const filter = `$filter=_cr40f_financeiro_value eq ${recordId}`
   return fetchAll('cr40f_pagantes', `?$select=${baseSelect}&${filter}`)
 }
@@ -148,10 +150,12 @@ export async function submitOperation(financeiroId: Guid, request: SubmitRequest
   const keptIds = new Set(request.pagantes.map((payer) => payer.existingPaganteId).filter((id): id is Guid => Boolean(id)))
   const results: SubmitResult['results'] = []
 
+  await validateBeforeWrite(financeiroId, request, existingRows, existingById)
+
   for (const row of existingRows) {
     const existingId = text(row, 'cr40f_pagantesid')
     if (existingId && !keptIds.has(existingId)) {
-      if (text(row, 'cr40f_cielolinkid')) console.warn('[GerarPagantes] Pagante removido possuia link Cielo. O link remoto nao sera cancelado automaticamente.')
+      if (text(row, 'cr40f_cielolinkid')) throw new Error('Nao e permitido remover um pagante que possui link Cielo ativo. Cancele o link antes de alterar o rateio.')
       await api.deleteRecord('cr40f_pagantes', existingId)
     }
   }
@@ -164,9 +168,7 @@ export async function submitOperation(financeiroId: Guid, request: SubmitRequest
       || Number(existing.cr40f_formadepagamento ?? 202410000) !== payer.paymentMethod
       || !payer.generateLink
 
-    if (existing && changed && text(existing, 'cr40f_cielolinkid')) {
-      console.warn('[GerarPagantes] Pagante alterado possuia link Cielo. O link remoto nao sera cancelado automaticamente.')
-    }
+    if (existing && changed && text(existing, 'cr40f_cielolinkid')) throw new Error('Nao e permitido alterar um pagante que possui link Cielo ativo. Cancele o link antes de refazer o rateio.')
 
     const payload = buildPayerRecord(financeiroId, payer, changed)
     let pagantesRecordId = payer.existingPaganteId
@@ -193,6 +195,33 @@ export async function submitOperation(financeiroId: Guid, request: SubmitRequest
 
   return { success: true, requestId: request.requestId, financeiroId, totalCents, results, errors }
 }
+
+async function validateBeforeWrite(financeiroId: Guid, request: SubmitRequest, existingRows: Array<Record<string, unknown>>, existingById: Map<string, Record<string, unknown>>): Promise<void> {
+  const api = getXrm()?.WebApi
+  if (!api) return
+  if (!request.pagantes.length) throw new Error('Selecione ao menos um pagante.')
+  const payerIds = new Set(request.pagantes.map((payer) => payer.paganteId))
+  if (payerIds.size !== request.pagantes.length) throw new Error('Existem pagantes duplicados no rateio.')
+  if (request.pagantes.some((payer) => !guidPattern.test(payer.paganteId) || !Number.isInteger(payer.amountCents) || payer.amountCents <= 0 || !paymentMethods.has(payer.paymentMethod))) throw new Error('O rateio possui pagante, valor ou forma de pagamento inválidos.')
+  const people = await fetchAll('cr40f_bancodedados', `?$select=cr40f_bancodedadosid,cr40f_status&$filter=${Array.from(payerIds).map((id) => `cr40f_bancodedadosid eq ${id}`).join(' or ')}`)
+  const peopleById = new Map(people.map((row) => [text(row, 'cr40f_bancodedadosid'), row]))
+  if (peopleById.size !== payerIds.size || people.some((row) => Number(row.cr40f_status) === 202410001)) throw new Error('Um dos pagantes não existe ou está inativo no Dataverse. Atualize a tela.')
+  for (const payer of request.pagantes) {
+    if (!payer.existingPaganteId) continue
+    const existing = existingById.get(payer.existingPaganteId)
+    if (!existing || lookup(existing, '_cr40f_financeiro_value') && lookup(existing, '_cr40f_financeiro_value') !== financeiroId) throw new Error('Um registro de pagante não pertence a esta OP. Atualize a tela.')
+    const status = text(existing, 'cr40f_status@OData.Community.Display.V1.FormattedValue')
+    if (paidStatuses.has(status)) throw new Error(`O pagante ${payer.name} já está ${status} e não pode ser alterado.`)
+  }
+  for (const row of existingRows) {
+    if (keptIdsFor(request).has(text(row, 'cr40f_pagantesid'))) continue
+    const status = text(row, 'cr40f_status@OData.Community.Display.V1.FormattedValue')
+    if (paidStatuses.has(status)) throw new Error(`O pagante ${status} não pode ser removido do rateio.`)
+    if (text(row, 'cr40f_cielolinkid')) throw new Error('O rateio não pode remover pagante com link Cielo ativo.')
+  }
+}
+
+function keptIdsFor(request: SubmitRequest): Set<string> { return new Set(request.pagantes.map((payer) => payer.existingPaganteId).filter((id): id is string => Boolean(id))) }
 
 function buildPayerRecord(financeiroId: Guid, payer: SubmitRequest['pagantes'][number], resetLink: boolean): Record<string, unknown> {
   const payload: Record<string, unknown> = {
