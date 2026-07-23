@@ -5,6 +5,8 @@ param(
 
   [string] $SolutionUniqueName = 'appbetinhos',
 
+  [string] $WorkflowId,
+
   [switch] $DeviceCode
 )
 
@@ -95,5 +97,9 @@ if (@($definition.value).Count -eq 0) {
   $definitionId = $created.environmentvariabledefinitionid
 } else { $definitionId = $definition.value[0].environmentvariabledefinitionid }
 Add-SolutionComponent $definitionId 380 $headers
+if ($WorkflowId) {
+  Add-SolutionComponent $WorkflowId 29 $headers
+  Write-Host "[gerar-pagantes:metadata] flow adicionado a solucao: $WorkflowId"
+}
 Invoke-Dataverse 'Post' "$api/PublishAllXml" $headers @{} | Out-Null
 Write-Host '[gerar-pagantes:metadata] metadados publicados na solucao appbetinhos.'

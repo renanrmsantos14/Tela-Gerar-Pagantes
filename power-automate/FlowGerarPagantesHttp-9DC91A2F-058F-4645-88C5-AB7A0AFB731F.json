@@ -320,6 +320,7 @@
                         "parameters": {
                           "entityName": "cr40f_paganteses",
                           "recordId": "@items('Apply_to_each_Pagante')?['paganteRecordId']",
+                          "item/cr40f_statusenvioemail": 202410002,
                           "item/cr40f_dataenvioemail": "@utcNow()",
                           "item/cr40f_erroenvioemail": null
                         },
@@ -341,6 +342,7 @@
                         "parameters": {
                           "entityName": "cr40f_paganteses",
                           "recordId": "@items('Apply_to_each_Pagante')?['paganteRecordId']",
+                          "item/cr40f_statusenvioemail": 202410003,
                           "item/cr40f_erroenvioemail": "@string(outputs('Send_Email_Link_Pagamento'))"
                         },
                         "host": {
@@ -353,6 +355,28 @@
                         "Send_Email_Link_Pagamento": [
                           "Failed",
                           "TimedOut"
+                        ]
+                      }
+                    },
+                    "Enviar_Email_Erro_Envio_Email": {
+                      "type": "OpenApiConnection",
+                      "inputs": {
+                        "parameters": {
+                          "emailMessage/To": "noreply@betinhos.onmicrosoft.com;junior@betinhos.com.br;financeiro@betinhos.com.br",
+                          "emailMessage/Subject": "ERRO NO FLOW - Flow Gerar Pagantes HTTP",
+                          "emailMessage/Body": "<p>Falha ao enviar link de pagamento para @{items('Apply_to_each_Pagante')?['email']}.</p><p>Consulte o campo Erro Envio Email no Pagante e o histórico do Flow.</p>",
+                          "emailMessage/From": "noreply@betinhos.com.br",
+                          "emailMessage/Importance": "High"
+                        },
+                        "host": {
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                          "operationId": "SendEmailV2",
+                          "connectionName": "shared_office365"
+                        }
+                      },
+                      "runAfter": {
+                        "Update_Pagante_Email_Erro": [
+                          "Succeeded"
                         ]
                       }
                     }
@@ -372,6 +396,7 @@
                     "parameters": {
                       "entityName": "cr40f_paganteses",
                       "recordId": "@items('Apply_to_each_Pagante')?['paganteRecordId']",
+                      "item/cr40f_statusgeracaolink": 202410003,
                       "item/cr40f_errogeracaolink": "@string(outputs('HTTP_Gerar_Link_Cielo'))"
                     },
                     "host": {
@@ -384,6 +409,28 @@
                     "HTTP_Gerar_Link_Cielo": [
                       "Failed",
                       "TimedOut"
+                    ]
+                  }
+                },
+                "Enviar_Email_Erro_Geracao_Link": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "parameters": {
+                      "emailMessage/To": "noreply@betinhos.onmicrosoft.com;junior@betinhos.com.br;financeiro@betinhos.com.br",
+                      "emailMessage/Subject": "ERRO NO FLOW - Flow Gerar Pagantes HTTP",
+                      "emailMessage/Body": "<p>Falha ao gerar link Cielo para @{items('Apply_to_each_Pagante')?['name']}.</p><p>Consulte o campo Erro Geracao Link no Pagante e o histórico do Flow.</p>",
+                      "emailMessage/From": "noreply@betinhos.com.br",
+                      "emailMessage/Importance": "High"
+                    },
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                      "operationId": "SendEmailV2",
+                      "connectionName": "shared_office365"
+                    }
+                  },
+                  "runAfter": {
+                    "Update_Pagante_Link_Erro": [
+                      "Succeeded"
                     ]
                   }
                 }
@@ -406,6 +453,36 @@
           "runAfter": {
             "Filter_Pagantes_Com_Link": [
               "Succeeded"
+            ]
+          }
+        },
+        "Scope_Erro_Global": {
+          "type": "Scope",
+          "actions": {
+            "Enviar_Email_Erro_Global": {
+              "type": "OpenApiConnection",
+              "inputs": {
+                "parameters": {
+                  "emailMessage/To": "noreply@betinhos.onmicrosoft.com;junior@betinhos.com.br;financeiro@betinhos.com.br",
+                  "emailMessage/Subject": "ERRO NO FLOW - Flow Gerar Pagantes HTTP",
+                  "emailMessage/Body": "<p>O Flow <strong>Flow Gerar Pagantes HTTP</strong> apresentou uma falha global.</p><p>Horário UTC: @{utcNow()}</p><p>Consulte o histórico de execuções do Power Automate para os detalhes.</p>",
+                  "emailMessage/From": "noreply@betinhos.com.br",
+                  "emailMessage/Importance": "High"
+                },
+                "host": {
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                  "operationId": "SendEmailV2",
+                  "connectionName": "shared_office365"
+                }
+              },
+              "runAfter": {}
+            }
+          },
+          "runAfter": {
+            "Condition_Tem_Link": [
+              "Failed",
+              "TimedOut",
+              "Skipped"
             ]
           }
         }
