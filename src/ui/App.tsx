@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { OperationData, Payer, Person } from '../domain'
 import { getRecordIdFromLocation, loadOperation, submitOperation } from '../dataverse'
 import { logAppError } from '../errorLogger'
@@ -33,20 +33,26 @@ export function App() {
   const [notice, setNotice] = useState<Notice>(null)
   const [attemptedSave, setAttemptedSave] = useState(false)
   const [selectionComplete, setSelectionComplete] = useState(false)
+  const [invalidAmountIds, setInvalidAmountIds] = useState<Set<string>>(new Set())
+  const [dirty, setDirty] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const dirtyRef = useRef(false)
   const isEmbedded = new URLSearchParams(window.location.search).get('embedded') === '1'
 
   function closeEmbedded(refresh = false) {
     if (!isEmbedded || window.parent === window) return
+    if (dirty && !window.confirm('Existem alterações não salvas. Deseja sair mesmo assim?')) return
     window.parent.postMessage({ type: 'cr40f-gerar-pagantes:close', refresh }, window.location.origin)
   }
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (ignoreDirty = false) => {
+    if (dirtyRef.current && !ignoreDirty && !window.confirm('Existem alterações não salvas. Deseja atualizar e descartá-las?')) return
     setLoading(true); setNotice(null)
     try {
       const id = getRecordIdFromLocation()
       if (!id && window.Xrm?.WebApi) throw new Error('Nenhuma OP foi recebida pela tela.')
       const data = await loadOperation(id ?? '00000000-0000-0000-0000-000000000001')
-      setOperation(data); setPayers(data.payers); setSelectionComplete(data.payers.length > 0)
+      setOperation(data); setPayers(data.payers); setSelectionComplete(data.payers.length > 0); setInvalidAmountIds(new Set()); setDirty(false)
       const failedLinks = data.payers.filter((payer) => payer.linkStatus === 'Failed')
       if (failedLinks.length) setNotice({ tone: 'error', text: `${failedLinks.length} link(s) de pagamento não foram gerados. Revise o Pagante e o histórico do Flow.` })
     } catch (error) {
@@ -55,6 +61,7 @@ export function App() {
     } finally { setLoading(false) }
   }, [])
 
+  useEffect(() => { dirtyRef.current = dirty }, [dirty])
   useEffect(() => { void refresh() }, [refresh])
 
   const totalRateado = useMemo(() => payers.reduce((sum, payer) => sum + payer.amountCents, 0), [payers])
@@ -69,8 +76,17 @@ export function App() {
     if (remaining > 0) messages.push(`Falta ratear ${formatCurrency(remaining)} para fechar o total da OP.`)
     if (remaining < 0) messages.push(`O rateio excede o total da OP em ${formatCurrency(Math.abs(remaining))}.`)
     if (payers.some((payer) => payer.sendEmail && !emailValid(payer.email))) messages.push('Informe um e-mail válido para quem receberá o link de pagamento.')
+    if (invalidAmountIds.size) messages.push('Corrija os valores com mais de duas casas decimais.')
     return messages
-  }, [operation, payers, remaining])
+  }, [operation, payers, remaining, invalidAmountIds])
+
+  const warnings = useMemo(() => {
+    const result = new Map<string, string>()
+    if (payers.length < 2) return result
+    const average = totalRateado / payers.length
+    payers.filter((payer) => payer.amountCents >= average * 3).forEach((payer) => result.set(payer.id, 'Valor muito acima da média do rateio.'))
+    return result
+  }, [payers, totalRateado])
 
   const rebalance = useCallback((next: Payer[]) => {
     if (!operation) return
@@ -80,21 +96,26 @@ export function App() {
 
   function togglePerson(person: Person) {
     const next = payers.some((payer) => payer.id === person.id) ? payers.filter((payer) => payer.id !== person.id) : [...payers, makePayer(person)]
-    rebalance(next)
+    setSaved(false); setDirty(true); rebalance(next)
   }
 
   function addExternal(person: Person) {
     if (selectedIds.has(person.id)) return
-    rebalance([...payers, makePayer({ ...person, role: 'Adicionado' })]); setExternalOpen(false); setExternalQuery('')
+    setSaved(false); setDirty(true); rebalance([...payers, makePayer({ ...person, role: 'Adicionado' })]); setExternalOpen(false); setExternalQuery('')
   }
 
-  function updatePayer(id: string, change: Partial<Payer>) { setPayers((current) => current.map((payer) => payer.id === id ? { ...payer, ...change } : payer)) }
+  function updatePayer(id: string, change: Partial<Payer>) { setSaved(false); setDirty(true); setPayers((current) => current.map((payer) => payer.id === id ? { ...payer, ...change } : payer)) }
 
-  async function save() {
+  function updateAmountValidity(id: string, invalid: boolean) {
+    setInvalidAmountIds((current) => { const next = new Set(current); if (invalid) next.add(id); else next.delete(id); return next })
+  }
+
+  async function save(allowTotalMismatch = false) {
     setAttemptedSave(true)
     if (!operation || saving) return
-    if (remaining !== 0) { setMismatchOpen(true); return }
-    if (errors.length) return
+    if (remaining !== 0 && !allowTotalMismatch) { setMismatchOpen(true); return }
+    const hasBlockingError = !payers.length || invalidAmountIds.size > 0 || payers.some((payer) => payer.amountCents <= 0 || payer.sendEmail && !emailValid(payer.email))
+    if (hasBlockingError) return
     const risky = payers.some((payer) => payer.existingPayerId && payer.paymentStatus && payer.paymentStatus !== 'Pendente')
     if (risky) { setConfirmOpen(true); return }
     await executeSave()
@@ -104,12 +125,13 @@ export function App() {
     if (!operation) return
     setSaving(true); setNotice(null)
     try {
-      const result = await submitOperation(operation.id, { requestId: crypto.randomUUID(), expectedFinanceiroVersion: operation.version, financeiroDisplayId: operation.displayId, totalCents: operation.totalCents, serviceStartDate: null, serviceEndDate: null, pagantes: payers.map((payer) => ({ paganteId: payer.id, existingPaganteId: payer.existingPayerId, name: payer.name, email: payer.email, amountCents: payer.amountCents, paymentMethod: payer.paymentMethod, generateLink: payer.generateLink, sendEmail: payer.sendEmail })) })
+      const result = await submitOperation(operation.id, { requestId: crypto.randomUUID(), expectedFinanceiroVersion: operation.version, financeiroDisplayId: operation.displayId, totalCents: operation.totalCents, allowTotalMismatch: remaining !== 0, serviceStartDate: null, serviceEndDate: null, pagantes: payers.map((payer) => ({ paganteId: payer.id, existingPaganteId: payer.existingPayerId, name: payer.name, email: payer.email, amountCents: payer.amountCents, paymentMethod: payer.paymentMethod, generateLink: payer.generateLink, sendEmail: payer.sendEmail })) })
       if (!result.success) throw new Error(result.errors.map((error) => error.message).join(' ') || 'A operação não foi concluída.')
       const flowError = result.errors.find((error) => error.code === 'FLOW_NOT_STARTED')
       const successText = flowError ? `Pagantes gravados. Processamento pendente: ${flowError.message}` : 'Pagantes gravados. E-mails serão enviados após o processamento.'
       setConfirmOpen(false)
-      await refresh()
+      setSaved(result.errors.length === 0); setDirty(false)
+      await refresh(true)
       setNotice({ tone: 'success', text: successText })
     } catch (error) {
       await logAppError(error, { source: 'React', action: 'save', phase: 'submit-operation', component: 'App', detailId: operation.id, detailType: 'cr40f_financeiro' })
@@ -120,18 +142,20 @@ export function App() {
   if (loading) return <div className="state-screen"><div className="skeleton skeleton--title" /><div className="skeleton skeleton--panel" /><small>{appVersion}</small></div>
   if (!operation) return <div className="state-screen"><strong>Não foi possível abrir esta OP.</strong>{notice ? <FeedbackNotice {...notice} /> : null}<button className="ui-button ui-button--secondary" onClick={() => void refresh()}>Tentar novamente</button><small>{appVersion}</small></div>
 
-  const actionHint = !selectionComplete ? 'Escolha os pagantes e avance' : remaining !== 0 ? 'Rateio divergente: revise os valores' : errors.length ? 'Revise os campos pendentes' : 'Rateio pronto para gerar'
+  const actionHint = saved ? 'Geração concluída' : !selectionComplete ? 'Escolha os pagantes e avance' : remaining !== 0 ? 'Rateio divergente: revise os valores' : errors.length ? 'Revise os campos pendentes' : 'Rateio pronto para gerar'
 
   return <PopupShell onBackdropClick={isEmbedded ? () => closeEmbedded(false) : undefined}>
-    <OperationHeader displayId={operation.displayId} serviceCount={operation.serviceCount} balanced={remaining === 0} onRefresh={() => void refresh()} onClose={isEmbedded ? () => closeEmbedded(true) : undefined} />
-    {notice ? <FeedbackNotice {...notice} /> : null}
-    <AllocationSummary totalCents={operation.totalCents} allocatedCents={totalRateado} remainingCents={remaining} />
-    <PeopleSelector people={involvedPeople} selectedIds={selectedIds} query={query} collapsed={selectionComplete} onQueryChange={setQuery} onToggle={togglePerson} onAddExternal={() => setExternalOpen(true)} onSplit={() => rebalance(payers)} onContinue={() => setSelectionComplete(true)} onEdit={() => setSelectionComplete(false)} />
-    {selectionComplete ? <PayerList payers={payers} onChange={updatePayer} onEditSelection={() => setSelectionComplete(false)} /> : null}
-    {attemptedSave && errors.length ? <div className="validation-panel" role="alert"><strong>Revise antes de continuar</strong><ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul></div> : null}
-    <StickyActionBar version={appVersion} hint={actionHint} ready={selectionComplete} saving={saving} confirm={false} onSave={() => void save()} />
+    <div className="popup-content">
+      <OperationHeader displayId={operation.displayId} serviceCount={operation.serviceCount} balanced={remaining === 0} onRefresh={() => void refresh()} onClose={isEmbedded ? () => closeEmbedded(true) : undefined} />
+      {notice ? <FeedbackNotice {...notice} /> : null}
+      <AllocationSummary totalCents={operation.totalCents} allocatedCents={totalRateado} remainingCents={remaining} />
+      <PeopleSelector people={involvedPeople} selectedIds={selectedIds} query={query} collapsed={selectionComplete} onQueryChange={setQuery} onToggle={togglePerson} onAddExternal={() => setExternalOpen(true)} onSplit={() => rebalance(payers)} onContinue={() => setSelectionComplete(true)} onEdit={() => setSelectionComplete(false)} />
+      {selectionComplete ? <PayerList payers={payers} onChange={updatePayer} invalidAmountIds={invalidAmountIds} warnings={warnings} onAmountValidityChange={updateAmountValidity} onEditSelection={() => { setSaved(false); setDirty(true); setSelectionComplete(false) }} /> : null}
+      {attemptedSave && errors.length ? <div className="validation-panel" role="alert"><strong>Revise antes de continuar</strong><ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul></div> : null}
+    </div>
+    <StickyActionBar version={appVersion} hint={actionHint} ready={selectionComplete} saving={saving} completed={saved} confirm={false} onSave={() => void save()} />
     <ExternalPayerDialog open={externalOpen} people={operation.directory} selectedIds={selectedIds} query={externalQuery} onQueryChange={setExternalQuery} onClose={() => setExternalOpen(false)} onSelect={addExternal} />
     <StatusConfirmationDialog open={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={() => void executeSave()} />
-    <AllocationMismatchDialog open={mismatchOpen} operationTotal={operation.totalCents} allocatedTotal={totalRateado} onClose={() => setMismatchOpen(false)} />
+    <AllocationMismatchDialog open={mismatchOpen} operationTotal={operation.totalCents} allocatedTotal={totalRateado} onClose={() => setMismatchOpen(false)} onContinue={() => { setMismatchOpen(false); void save(true) }} />
   </PopupShell>
 }

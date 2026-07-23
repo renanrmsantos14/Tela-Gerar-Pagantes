@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using Microsoft.Crm.Sdk.Messages;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using Newtonsoft.Json;
@@ -41,12 +42,14 @@ public sealed class GerarPagantesPlugin : IPlugin
             response.FinanceiroId = target.Id;
             if (request.RequestId == Guid.Empty) throw new InvalidPluginExecutionException("requestId é obrigatório.");
             if (IsProcessed(service, request.RequestId)) throw new InvalidPluginExecutionException("Esta solicitação já foi processada.");
-            var finance = service.Retrieve(Financeiro, target.Id, new ColumnSet("versionnumber", "cr40f_id"));
+            var finance = service.Retrieve(Financeiro, target.Id, new ColumnSet("versionnumber", "cr40f_id", "statecode", "statuscode", "ownerid"));
+            ValidateOperationAccess(service, context, finance);
             ValidateVersion(finance, request.ExpectedFinanceiroVersion);
             var totalCents = CalculateOperationTotal(service, target.Id);
-            ValidateRequest(request, totalCents);
+            ValidateRequest(service, request, totalCents);
             response.TotalCents = totalCents;
             var existing = LoadExistingPayers(service, target.Id);
+            ValidateExistingPayload(request, existing);
             var cielo = new CieloClient(_clientId, _clientSecret);
             var createdLinks = new List<string>();
             try
@@ -102,12 +105,36 @@ public sealed class GerarPagantesPlugin : IPlugin
             throw new InvalidPluginExecutionException("A OP foi alterada por outro usuário. Atualize os dados antes de salvar.");
     }
 
-    private static void ValidateRequest(GerarPagantesRequest request, int totalCents)
+    private static void ValidateRequest(IOrganizationService service, GerarPagantesRequest request, int totalCents)
     {
         if (!request.Pagantes.Any()) throw new InvalidPluginExecutionException("Selecione ao menos um pagante.");
         if (request.Pagantes.GroupBy(p => p.PaganteId).Any(group => group.Key == Guid.Empty || group.Count() > 1)) throw new InvalidPluginExecutionException("Existem pagantes inválidos ou duplicados.");
         if (request.Pagantes.Any(p => p.AmountCents <= 0)) throw new InvalidPluginExecutionException("Todos os pagantes devem possuir valor maior que zero.");
-        if (request.Pagantes.Sum(p => p.AmountCents) != totalCents) throw new InvalidPluginExecutionException("O total do rateio diverge do valor da OP.");
+        if (request.Pagantes.Any(p => p.SendEmail && (!p.GenerateLink || !System.Text.RegularExpressions.Regex.IsMatch(p.Email?.Trim() ?? "", @"^\S+@\S+\.\S+$")))) throw new InvalidPluginExecutionException("Email requires link and valid email.");
+        if (request.Pagantes.Sum(p => p.AmountCents) != totalCents && !request.AllowTotalMismatch) throw new InvalidPluginExecutionException("O total do rateio diverge do valor da OP.");
+        var ids = request.Pagantes.Select(p => p.PaganteId).ToArray();
+        var people = service.RetrieveMultiple(new QueryExpression("cr40f_bancodedados") { ColumnSet = new ColumnSet("cr40f_nomedopassageiro", "cr40f_email", "cr40f_status"), Criteria = new FilterExpression(LogicalOperator.And) { Conditions = { new ConditionExpression("cr40f_bancodedadosid", ConditionOperator.In, ids.Cast<object>().ToArray()) } } }).Entities.ToDictionary(p => p.Id);
+        foreach (var payer in request.Pagantes)
+        {
+            if (!people.TryGetValue(payer.PaganteId, out var person) || person.GetAttributeValue<OptionSetValue>("cr40f_status")?.Value == 202410001) throw new InvalidPluginExecutionException("Payer does not exist or is inactive.");
+            if (!string.Equals(person.GetAttributeValue<string>("cr40f_nomedopassageiro")?.Trim(), payer.Name?.Trim(), StringComparison.Ordinal) || !string.Equals(person.GetAttributeValue<string>("cr40f_email")?.Trim(), payer.Email?.Trim(), StringComparison.OrdinalIgnoreCase)) throw new InvalidPluginExecutionException("Payer data differs from Dataverse.");
+        }
+    }
+
+    private static void ValidateOperationAccess(IOrganizationService service, IPluginExecutionContext context, Entity finance)
+    {
+        var status = finance.FormattedValues.TryGetValue("statuscode", out var formatted) ? formatted : "inactive";
+        if (finance.GetAttributeValue<OptionSetValue>("statecode")?.Value == 1 || status.IndexOf("cancel", StringComparison.OrdinalIgnoreCase) >= 0 || status.IndexOf("encerr", StringComparison.OrdinalIgnoreCase) >= 0 || status.IndexOf("fechad", StringComparison.OrdinalIgnoreCase) >= 0) throw new InvalidPluginExecutionException("Operation is closed and cannot generate payers.");
+        var access = (RetrievePrincipalAccessResponse)service.Execute(new RetrievePrincipalAccessRequest { Target = finance.ToEntityReference(), Principal = new EntityReference("systemuser", context.UserId) });
+        if ((access.AccessRights & AccessRights.WriteAccess) != AccessRights.WriteAccess) throw new InvalidPluginExecutionException("User has no write permission for this operation.");
+    }
+
+    private static void ValidateExistingPayload(GerarPagantesRequest request, IReadOnlyDictionary<Guid, Entity> existing)
+    {
+        foreach (var payer in request.Pagantes.Where(p => p.ExistingPaganteId.HasValue))
+        {
+            if (!existing.TryGetValue(payer.ExistingPaganteId!.Value, out var row) || row.GetAttributeValue<EntityReference>("cr40f_bancodedados")?.Id != payer.PaganteId) throw new InvalidPluginExecutionException("Existing payer record does not belong to this operation.");
+        }
     }
 
     private static int CalculateOperationTotal(IOrganizationService service, Guid financeiroId)

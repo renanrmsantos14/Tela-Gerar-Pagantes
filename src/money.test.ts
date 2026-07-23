@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseCurrency, splitEvenly } from './money'
+import { hasValidCurrencyPrecision, parseCurrency, splitEvenly } from './money'
 
 describe('splitEvenly', () => {
   it('distribui centavos residuais no começo da lista', () => {
@@ -14,5 +14,10 @@ describe('parseCurrency', () => {
 
   it('rejeita valor inválido', () => {
     expect(parseCurrency('1,2,3')).toBeNull()
+  })
+
+  it('rejeita mais de duas casas decimais', () => {
+    expect(hasValidCurrencyPrecision('10,001')).toBe(false)
+    expect(hasValidCurrencyPrecision('10,01')).toBe(true)
   })
 })

@@ -15,6 +15,11 @@ export function parseCurrency(input: string): number | null {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 100) : null
 }
 
+export function hasValidCurrencyPrecision(input: string): boolean {
+  const clean = input.trim().replace(/R\$\s?/g, '')
+  return /^\d{1,3}(\.\d{3})*(,\d{0,2})?$|^\d+(,\d{0,2})?$/.test(clean)
+}
+
 export function splitEvenly(totalCents: number, payerIds: string[]): Map<string, number> {
   const result = new Map<string, number>()
   if (!payerIds.length) return result

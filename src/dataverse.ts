@@ -1,6 +1,6 @@
 import { demoOperation } from './demo'
-import type { Guid, OperationData, Payer, Person, SubmitRequest, SubmitResult } from './domain'
-import { logAppError } from './errorLogger'
+import type { FlowPayerResult, Guid, OperationData, Payer, Person, SubmitRequest, SubmitResult } from './domain'
+import { logAppError, logAppOperation } from './errorLogger'
 
 interface RetrieveResult { entities: Array<Record<string, unknown>>; nextLink?: string }
 
@@ -11,7 +11,9 @@ interface XrmApi {
     createRecord: (entity: string, data: Record<string, unknown>) => Promise<{ id: string }>
     updateRecord: (entity: string, id: string, data: Record<string, unknown>) => Promise<void>
     deleteRecord: (entity: string, id: string) => Promise<void>
+    execute?: (request: Record<string, unknown>) => Promise<{ ok: boolean; json: () => Promise<Record<string, unknown>> }>
   }
+  Utility?: { getGlobalContext?: () => { userSettings?: { userId?: string; userName?: string } } }
 }
 
 declare global { interface Window { Xrm?: XrmApi } }
@@ -23,6 +25,8 @@ const payerStatusPending = 202410001
 const flowUrlEnvironmentVariable = 'new_FlowURLGerarPagantesHttp'
 const paymentMethods = new Set([202410000, 202410001, 202410002])
 const paidStatuses = new Set(['Pago', 'Autorizado'])
+const generationTable = 'cr40f_geracaopagantesoperacao'
+const activeGenerationWindowMs = 15 * 60 * 1000
 
 function toLinkStatus(value: string): Payer['linkStatus'] {
   if (value === 'Pendente') return 'Pending'
@@ -42,6 +46,64 @@ function getXrm(): XrmApi | undefined {
   if (window.Xrm) return window.Xrm
   try { return window.parent !== window ? window.parent.Xrm : undefined }
   catch { return undefined }
+}
+
+function normalizeComparable(value: unknown): string {
+  return String(value ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('pt-BR')
+}
+
+function currentOperator(): { id: string; name: string } {
+  const settings = getXrm()?.Utility?.getGlobalContext?.().userSettings
+  return { id: String(settings?.userId ?? '').replace(/[{}]/g, ''), name: String(settings?.userName ?? '') }
+}
+
+function assertOperationEditable(finance: Record<string, unknown>): void {
+  const stateCode = Number(finance.statecode ?? 0)
+  const statusLabel = text(finance, 'statuscode@OData.Community.Display.V1.FormattedValue')
+  if (stateCode === 1 || /cancel|encerr|fechad/i.test(statusLabel)) {
+    throw new Error(`A OP está ${statusLabel || 'inativa'} e não pode gerar pagantes.`)
+  }
+}
+
+async function assertOperationWriteAccess(financeiroId: Guid, finance: Record<string, unknown>): Promise<void> {
+  const api = getXrm()?.WebApi
+  if (!api) return
+  const operator = currentOperator()
+  if (api.execute && operator.id) {
+    const response = await api.execute({
+      Target: { entityType: 'cr40f_financeiro', id: financeiroId },
+      Principal: { entityType: 'systemuser', id: operator.id },
+      getMetadata: () => ({
+        boundParameter: null,
+        operationType: 1,
+        operationName: 'RetrievePrincipalAccess',
+        parameterTypes: {
+          Target: { typeName: 'mscrm.crmbaseentity', structuralProperty: 5 },
+          Principal: { typeName: 'mscrm.crmbaseentity', structuralProperty: 5 }
+        }
+      })
+    })
+    const body = await response.json()
+    const access = body.AccessRights
+    const hasWriteAccess = typeof access === 'number' ? (access & 2) === 2 : /(^|[, ])WriteAccess([, ]|$)/i.test(String(access ?? ''))
+    if (!hasWriteAccess) throw new Error('Você não possui permissão de gravação nesta OP.')
+    return
+  }
+  const ownerId = lookup(finance, '_ownerid_value')
+  if (ownerId && operator.id && ownerId.toLowerCase() !== operator.id.toLowerCase()) {
+    throw new Error('Você não possui permissão de gravação nesta OP.')
+  }
+}
+
+async function fetchOperationTotal(financeiroId: Guid): Promise<number> {
+  const services = await fetchAll('cr40f_reservadeveculos', `?$select=cr40f_reservadeveculosid&$filter=_cr40f_financeiro_value eq ${financeiroId}`)
+  const serviceIds = services.map((service) => text(service, 'cr40f_reservadeveculosid')).filter(Boolean)
+  if (!serviceIds.length) throw new Error('Esta OP não possui serviços vinculados.')
+  const serviceFilter = serviceIds.map((id) => `_cr40f_servicorelacionadogeral_value eq ${id}`).join(' or ')
+  const compositions = await fetchAll('cr40f_composicaodeprecos', `?$select=new_valortotal&$filter=${serviceFilter}`)
+  const totalCents = Math.round(compositions.reduce((sum, row) => sum + Number(row.new_valortotal ?? 0), 0) * 100)
+  if (totalCents <= 0) throw new Error('A OP não possui composição de preço válida.')
+  return totalCents
 }
 
 export function normalizeGuid(value: string): Guid {
@@ -119,7 +181,9 @@ export async function loadOperation(recordId: Guid): Promise<OperationData> {
   const xrm = getXrm()
   if (!xrm?.WebApi) return demoOperation
   const api = xrm.WebApi
-  const finance = await api.retrieveRecord('cr40f_financeiro', recordId, '?$select=cr40f_idfinanceiro,versionnumber')
+  const finance = await api.retrieveRecord('cr40f_financeiro', recordId, '?$select=cr40f_idfinanceiro,versionnumber,statecode,statuscode,_ownerid_value')
+  assertOperationEditable(finance)
+  await assertOperationWriteAccess(recordId, finance)
   const services = await fetchAll('cr40f_reservadeveculos', `?$select=cr40f_reservadeveculosid,_cr40f_solicitante_value&$filter=_cr40f_financeiro_value eq ${recordId}`)
   const serviceIds = services.map((service) => text(service, 'cr40f_reservadeveculosid')).filter(Boolean)
   if (!serviceIds.length) throw new Error('Esta OP nao possui servicos vinculados.')
@@ -146,20 +210,58 @@ export async function loadOperation(recordId: Guid): Promise<OperationData> {
     version: text(finance, 'versionnumber'),
     serviceCount: services.length,
     totalCents,
+    statusLabel: text(finance, 'statuscode@OData.Community.Display.V1.FormattedValue'),
+    stateCode: Number(finance.statecode ?? 0),
+    ownerId: lookup(finance, '_ownerid_value'),
     people,
     directory,
     payers
   }
 }
 
+async function beginGenerationLock(financeiroId: Guid, request: SubmitRequest): Promise<Guid> {
+  const api = getXrm()?.WebApi
+  if (!api) return request.requestId
+  const recent = await fetchAll(generationTable, `?$select=cr40f_geracaopagantesoperacaoid,cr40f_requestid,cr40f_sucesso,cr40f_resultado,createdon&$filter=_cr40f_financeiro_value eq ${financeiroId} and cr40f_sucesso eq false&$orderby=createdon desc&$top=1`)
+  const latest = recent[0]
+  if (latest) {
+    const createdAt = Date.parse(text(latest, 'createdon'))
+    const processing = (() => { try { return JSON.parse(text(latest, 'cr40f_resultado')).status === 'Processing' } catch { return false } })()
+    if (processing && (!createdAt || Date.now() - createdAt < activeGenerationWindowMs)) {
+      throw new Error('Já existe outra geração de pagantes em processamento nesta OP.')
+    }
+  }
+  const operator = currentOperator()
+  const created = await api.createRecord(generationTable, {
+    cr40f_requestid: request.requestId,
+    'cr40f_financeiro@odata.bind': `/cr40f_financeiros(${financeiroId})`,
+    cr40f_sucesso: false,
+    cr40f_resultado: JSON.stringify({ status: 'Processing', operatorId: operator.id, operatorName: operator.name, financeiroVersion: request.expectedFinanceiroVersion, allocationSummary: { totalCents: request.totalCents, allocatedCents: request.pagantes.reduce((sum, payer) => sum + payer.amountCents, 0), payerCount: request.pagantes.length } })
+  })
+  return normalizeGuid(created.id)
+}
+
+async function finishGenerationLock(lockId: Guid, request: SubmitRequest, result: SubmitResult): Promise<void> {
+  const api = getXrm()?.WebApi
+  if (!api) return
+  await api.updateRecord(generationTable, lockId, {
+    cr40f_sucesso: result.success,
+    cr40f_resultado: JSON.stringify({ status: result.success ? 'Completed' : 'Failed', requestId: request.requestId, results: result.results, errors: result.errors })
+  })
+}
+
 export async function submitOperation(financeiroId: Guid, request: SubmitRequest): Promise<SubmitResult> {
   const api = getXrm()?.WebApi
   const totalCents = request.pagantes.reduce((sum, payer) => sum + payer.amountCents, 0)
   if (!api) return { success: true, requestId: request.requestId, financeiroId, totalCents, results: request.pagantes.map((payer) => ({ paganteId: payer.paganteId, pagantesRecordId: payer.existingPaganteId ?? payer.paganteId, linkStatus: payer.generateLink ? 'Pending' : 'NotApplicable', emailStatus: payer.sendEmail ? 'Pending' : 'NotApplicable' })), errors: [] }
-  if (totalCents !== request.totalCents) throw new Error('O total dos pagantes nao fecha com o total da OP.')
+  if (totalCents !== request.totalCents && !request.allowTotalMismatch) throw new Error('O total dos pagantes nao fecha com o total da OP.')
 
-  const finance = await api.retrieveRecord('cr40f_financeiro', financeiroId, '?$select=versionnumber')
+  const finance = await api.retrieveRecord('cr40f_financeiro', financeiroId, '?$select=versionnumber,statecode,statuscode,_ownerid_value')
+  assertOperationEditable(finance)
+  await assertOperationWriteAccess(financeiroId, finance)
   if (text(finance, 'versionnumber') !== request.expectedFinanceiroVersion) throw new Error('A OP foi alterada por outro usuario. Atualize a tela e tente novamente.')
+  const freshTotalCents = await fetchOperationTotal(financeiroId)
+  if (freshTotalCents !== request.totalCents) throw new Error('O valor da OP mudou. Atualize os dados antes de salvar.')
 
   const needsFlow = request.pagantes.some((payer) => payer.generateLink || payer.sendEmail)
   const existingRows = await fetchExistingPayers(financeiroId)
@@ -168,50 +270,69 @@ export async function submitOperation(financeiroId: Guid, request: SubmitRequest
   const results: SubmitResult['results'] = []
 
   await validateBeforeWrite(financeiroId, request, existingRows, existingById)
+  const lockId = await beginGenerationLock(financeiroId, request)
+  let finalResult: SubmitResult
 
-  for (const row of existingRows) {
-    const existingId = text(row, 'cr40f_pagantesid')
-    if (existingId && !keptIds.has(existingId)) {
-      if (text(row, 'cr40f_cielolinkid')) throw new Error('Nao e permitido remover um pagante que possui link Cielo ativo. Cancele o link antes de alterar o rateio.')
-      await api.deleteRecord('cr40f_pagantes', existingId)
-    }
-  }
-
-  for (const payer of request.pagantes) {
-    const existing = payer.existingPaganteId ? existingById.get(payer.existingPaganteId) : undefined
-    const changed = !existing
-      || lookup(existing, '_cr40f_bancodedados_value') !== payer.paganteId
-      || moneyToCents(existing.cr40f_valor) !== payer.amountCents
-      || Number(existing.cr40f_formadepagamento ?? 202410000) !== payer.paymentMethod
-      || !payer.generateLink
-
-    if (existing && changed && text(existing, 'cr40f_cielolinkid')) throw new Error('Nao e permitido alterar um pagante que possui link Cielo ativo. Cancele o link antes de refazer o rateio.')
-
-    const payload = buildPayerRecord(financeiroId, payer, changed)
-    let pagantesRecordId = payer.existingPaganteId
-    if (pagantesRecordId) await api.updateRecord('cr40f_pagantes', pagantesRecordId, payload)
-    else {
-      const created = await api.createRecord('cr40f_pagantes', payload)
-      pagantesRecordId = normalizeGuid(created.id)
+  try {
+    for (const row of existingRows) {
+      const existingId = text(row, 'cr40f_pagantesid')
+      if (existingId && !keptIds.has(existingId)) {
+        if (text(row, 'cr40f_cielolinkid')) throw new Error('Nao e permitido remover um pagante que possui link Cielo ativo. Cancele o link antes de alterar o rateio.')
+        await api.deleteRecord('cr40f_pagantes', existingId)
+      }
     }
 
-    results.push({ paganteId: payer.paganteId, pagantesRecordId, linkStatus: payer.generateLink ? 'Pending' : 'NotApplicable', emailStatus: payer.sendEmail ? 'Pending' : 'NotApplicable' })
-  }
+    for (const payer of request.pagantes) {
+      const existing = payer.existingPaganteId ? existingById.get(payer.existingPaganteId) : undefined
+      const changed = !existing
+        || lookup(existing, '_cr40f_bancodedados_value') !== payer.paganteId
+        || moneyToCents(existing.cr40f_valor) !== payer.amountCents
+        || Number(existing.cr40f_formadepagamento ?? 202410000) !== payer.paymentMethod
+        || !payer.generateLink
 
-  const errors: SubmitResult['errors'] = []
-  if (needsFlow) {
-    try {
-      const flowUrl = await resolveFlowUrl()
-      await startGerarPagantesFlow(flowUrl, financeiroId, request, results)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Nao foi possivel acionar o Flow HTTP.'
-      await logAppError(error, { source: 'Web Resource', action: 'startGerarPagantesFlow', phase: 'flow-http', component: 'dataverse', detailId: financeiroId, detailType: 'cr40f_financeiro', payload: { requestId: request.requestId } })
-      console.error('[GerarPagantes] Pagantes gravados, mas Flow nao foi acionado.', error)
-      errors.push({ code: 'FLOW_NOT_STARTED', message })
+      if (existing && changed && text(existing, 'cr40f_cielolinkid')) throw new Error('Nao e permitido alterar um pagante que possui link Cielo ativo. Cancele o link antes de refazer o rateio.')
+
+      const payload = buildPayerRecord(financeiroId, payer, changed)
+      let pagantesRecordId = payer.existingPaganteId
+      if (pagantesRecordId) await api.updateRecord('cr40f_pagantes', pagantesRecordId, payload)
+      else {
+        const created = await api.createRecord('cr40f_pagantes', payload)
+        pagantesRecordId = normalizeGuid(created.id)
+      }
+
+      results.push({ paganteId: payer.paganteId, pagantesRecordId, linkStatus: payer.generateLink ? 'Pending' : 'NotApplicable', emailStatus: payer.sendEmail ? 'Pending' : 'NotApplicable' })
     }
-  }
 
-  return { success: true, requestId: request.requestId, financeiroId, totalCents, results, errors }
+    const errors: SubmitResult['errors'] = []
+    if (needsFlow) {
+      try {
+        const flowUrl = await resolveFlowUrl()
+        const flowResults = await startGerarPagantesFlow(flowUrl, financeiroId, request, results)
+        const byPayer = new Map(flowResults.map((item) => [item.paganteId, item]))
+        for (const result of results) {
+          const flowResult = byPayer.get(result.paganteId)
+          if (!flowResult || flowResult.paganteRecordId !== result.pagantesRecordId) throw new Error(`O Flow não confirmou o pagante ${result.paganteId}.`)
+          Object.assign(result, flowResult)
+          if (flowResult.error) errors.push({ code: 'FLOW_PAYER_ERROR', message: flowResult.error, paganteId: result.paganteId })
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Nao foi possivel acionar o Flow HTTP.'
+        await logAppError(error, { source: 'Web Resource', action: 'startGerarPagantesFlow', phase: 'flow-http', component: 'dataverse', detailId: financeiroId, detailType: 'cr40f_financeiro', payload: { requestId: request.requestId } })
+        console.error('[GerarPagantes] Pagantes gravados, mas Flow nao foi acionado.', error)
+        errors.push({ code: 'FLOW_NOT_STARTED', message })
+      }
+    }
+
+    finalResult = { success: true, requestId: request.requestId, financeiroId, totalCents, results, errors }
+    await finishGenerationLock(lockId, request, finalResult)
+    const operator = currentOperator()
+    await logAppOperation({ action: 'gerar-pagantes', detailId: financeiroId, operatorId: operator.id, operatorName: operator.name, financeiroVersion: request.expectedFinanceiroVersion, allocationSummary: { totalCents: request.totalCents, allocatedCents: totalCents, payerCount: request.pagantes.length }, payload: { requestId: request.requestId, results, errors } })
+    return finalResult
+  } catch (error) {
+    finalResult = { success: false, requestId: request.requestId, financeiroId, totalCents, results, errors: [{ code: 'SAVE_FAILED', message: error instanceof Error ? error.message : 'Falha ao gravar pagantes.' }] }
+    try { await finishGenerationLock(lockId, request, finalResult) } catch { /* preserve original error */ }
+    throw error
+  }
 }
 
 async function validateBeforeWrite(financeiroId: Guid, request: SubmitRequest, existingRows: Array<Record<string, unknown>>, existingById: Map<string, Record<string, unknown>>): Promise<void> {
@@ -221,12 +342,16 @@ async function validateBeforeWrite(financeiroId: Guid, request: SubmitRequest, e
   const payerIds = new Set(request.pagantes.map((payer) => payer.paganteId))
   if (payerIds.size !== request.pagantes.length) throw new Error('Existem pagantes duplicados no rateio.')
   if (request.pagantes.some((payer) => !guidPattern.test(payer.paganteId) || !Number.isInteger(payer.amountCents) || payer.amountCents <= 0 || !paymentMethods.has(payer.paymentMethod))) throw new Error('O rateio possui pagante, valor ou forma de pagamento inválidos.')
-  const people = await fetchAll('cr40f_bancodedados', `?$select=cr40f_bancodedadosid,cr40f_status&$filter=${Array.from(payerIds).map((id) => `cr40f_bancodedadosid eq ${id}`).join(' or ')}`)
+  if (request.pagantes.some((payer) => payer.sendEmail && (!payer.generateLink || !/^\S+@\S+\.\S+$/.test(payer.email.trim())))) throw new Error('Envio de e-mail exige link e e-mail válido para cada pagante.')
+  const people = await fetchAll('cr40f_bancodedados', `?$select=cr40f_bancodedadosid,cr40f_nomedopassageiro,cr40f_email,cr40f_status&$filter=${Array.from(payerIds).map((id) => `cr40f_bancodedadosid eq ${id}`).join(' or ')}`)
   const peopleById = new Map(people.map((row) => [text(row, 'cr40f_bancodedadosid'), row]))
   if (peopleById.size !== payerIds.size || people.some((row) => Number(row.cr40f_status) === 202410001)) throw new Error('Um dos pagantes não existe ou está inativo no Dataverse. Atualize a tela.')
   for (const payer of request.pagantes) {
+    const person = peopleById.get(payer.paganteId)
+    if (!person || normalizeComparable(person.cr40f_nomedopassageiro) !== normalizeComparable(payer.name) || normalizeComparable(person.cr40f_email) !== normalizeComparable(payer.email)) throw new Error(`Os dados do pagante ${payer.paganteId} divergem do Dataverse. Atualize a tela.`)
     if (!payer.existingPaganteId) continue
     const existing = existingById.get(payer.existingPaganteId)
+    if (existing && lookup(existing, '_cr40f_bancodedados_value') !== payer.paganteId) throw new Error('O registro de pagante não corresponde à pessoa selecionada. Atualize a tela.')
     if (!existing || lookup(existing, '_cr40f_financeiro_value') && lookup(existing, '_cr40f_financeiro_value') !== financeiroId) throw new Error('Um registro de pagante não pertence a esta OP. Atualize a tela.')
     const status = text(existing, 'cr40f_status@OData.Community.Display.V1.FormattedValue')
     if (paidStatuses.has(status)) throw new Error(`O pagante ${payer.name} já está ${status} e não pode ser alterado.`)
@@ -263,12 +388,17 @@ function buildPayerRecord(financeiroId: Guid, payer: SubmitRequest['pagantes'][n
   return payload
 }
 
-async function startGerarPagantesFlow(url: string, financeiroId: Guid, request: SubmitRequest, results: SubmitResult['results']): Promise<void> {
+async function startGerarPagantesFlow(url: string, financeiroId: Guid, request: SubmitRequest, results: SubmitResult['results']): Promise<FlowPayerResult[]> {
+  const operator = currentOperator()
   const body = JSON.stringify({
     requestId: request.requestId,
     financeiroId,
     financeiroDisplayId: request.financeiroDisplayId,
+    operatorId: operator.id,
+    operatorName: operator.name,
+    financeiroVersion: request.expectedFinanceiroVersion,
     totalCents: request.totalCents,
+    allocationSummary: { allocatedCents: request.pagantes.reduce((sum, payer) => sum + payer.amountCents, 0), payerCount: request.pagantes.length },
     serviceStartDate: request.serviceStartDate ?? null,
     serviceEndDate: request.serviceEndDate ?? null,
     pagantes: request.pagantes.map((payer) => ({
@@ -283,10 +413,34 @@ async function startGerarPagantesFlow(url: string, financeiroId: Guid, request: 
     }))
   })
 
-  const response = await fetch(url, { method: 'POST', mode: 'cors', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body })
-  const result = await response.json().catch(() => null) as { success?: boolean; message?: string } | null
-  if (!response.ok || !result?.success) throw new Error(result?.message || `Flow HTTP retornou ${response.status}.`)
-  console.info('[GerarPagantes] Flow HTTP acionado.', { requestId: request.requestId })
+  type FlowHttpResponse = { success?: boolean; requestId?: string; message?: string; results?: FlowPayerResult[]; errors?: Array<{ paganteId?: Guid; message?: string }> }
+  let response: Response | undefined
+  let result: FlowHttpResponse | null = null
+  let lastError: unknown
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 15000)
+    try {
+      response = await fetch(url, { method: 'POST', mode: 'cors', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body, signal: controller.signal })
+      result = await response.json().catch(() => null) as FlowHttpResponse | null
+      if (response.ok && result?.success) break
+      if (response.status < 500 && response.status !== 408 && response.status !== 429) break
+      lastError = new Error(result?.message || `Flow HTTP retornou ${response.status}.`)
+    } catch (error) {
+      lastError = error
+    } finally {
+      window.clearTimeout(timeout)
+    }
+    if (attempt < 2) await new Promise((resolve) => window.setTimeout(resolve, 400 * (attempt + 1)))
+  }
+  if (!response?.ok || !result?.success) throw lastError instanceof Error ? lastError : new Error(result?.message || 'Não foi possível concluir o Flow HTTP.')
+  if (result.requestId !== request.requestId || !Array.isArray(result.results)) throw new Error('O Flow retornou uma confirmação inválida para esta geração.')
+  const expectedIds = new Set(results.map((item) => item.paganteId))
+  const validStatuses = new Set(['NotApplicable', 'Generated', 'Pending', 'Failed', 'Indeterminate'])
+  const validEmailStatuses = new Set(['NotApplicable', 'Sent', 'Pending', 'Failed'])
+  if (result.results.length !== expectedIds.size || result.results.some((item) => !expectedIds.has(item.paganteId) || !validStatuses.has(item.linkStatus) || !validEmailStatuses.has(item.emailStatus) || !guidPattern.test(item.paganteRecordId))) throw new Error('O Flow não confirmou todos os pagantes individualmente.')
+  console.info('[GerarPagantes] Flow HTTP confirmado por pagante.', { requestId: request.requestId, count: result.results.length })
+  return result.results
 }
 
 async function resolveFlowUrl(): Promise<string> {

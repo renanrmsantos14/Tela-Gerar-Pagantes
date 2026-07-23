@@ -6,6 +6,8 @@ export const demoOperation: OperationData = {
   version: '1',
   serviceCount: 3,
   totalCents: 482750,
+  statusLabel: 'Em aberto',
+  stateCode: 0,
   people: [
     { id: '10000000-0000-0000-0000-000000000001', name: 'Mariana Costa', email: 'mariana.costa@empresa.com.br', phone: '(11) 99999-1001', role: 'Solicitante' },
     { id: '10000000-0000-0000-0000-000000000002', name: 'Carlos Mendes', email: 'carlos.mendes@empresa.com.br', phone: '(11) 99999-1002', role: 'Passageiro' },

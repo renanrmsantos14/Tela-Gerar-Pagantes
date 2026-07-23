@@ -7,6 +7,7 @@ public sealed class GerarPagantesRequest
 {
     public Guid RequestId { get; set; }
     public string ExpectedFinanceiroVersion { get; set; } = string.Empty;
+    public bool AllowTotalMismatch { get; set; }
     public List<PaganteRequest> Pagantes { get; set; } = new();
 }
 
@@ -14,6 +15,8 @@ public sealed class PaganteRequest
 {
     public Guid PaganteId { get; set; }
     public Guid? ExistingPaganteId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
     public int AmountCents { get; set; }
     public int PaymentMethod { get; set; }
     public bool GenerateLink { get; set; }

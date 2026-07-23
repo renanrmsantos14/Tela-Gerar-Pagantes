@@ -39,6 +39,9 @@ export interface OperationData {
   version: string
   serviceCount: number
   totalCents: number
+  statusLabel: string
+  stateCode: number
+  ownerId?: Guid
   people: Person[]
   directory: Person[]
   payers: Payer[]
@@ -49,6 +52,7 @@ export interface SubmitRequest {
   expectedFinanceiroVersion: string
   financeiroDisplayId: string
   totalCents: number
+  allowTotalMismatch: boolean
   serviceStartDate?: string | null
   serviceEndDate?: string | null
   pagantes: Array<{
@@ -76,4 +80,13 @@ export interface SubmitResult {
     paymentUrl?: string
   }>
   errors: Array<{ code: string; message: string; paganteId?: Guid }>
+}
+
+export interface FlowPayerResult {
+  paganteId: Guid
+  paganteRecordId: Guid
+  linkStatus: LinkStatus
+  emailStatus: EmailStatus
+  paymentUrl?: string
+  error?: string
 }

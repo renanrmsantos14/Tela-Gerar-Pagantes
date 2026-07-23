@@ -9,6 +9,16 @@ type ErrorLogContext = {
   payload?: unknown
 }
 
+export type OperationLogContext = {
+  action: string
+  detailId: string
+  operatorId?: string
+  operatorName?: string
+  financeiroVersion?: string
+  allocationSummary?: unknown
+  payload?: unknown
+}
+
 type ErrorLogApi = {
   WebApi?: {
     createRecord: (entity: string, data: Record<string, unknown>) => Promise<{ id: string }>
@@ -92,6 +102,40 @@ export async function logAppError(error: unknown, context: ErrorLogContext = {})
     await api.createRecord(errorLogTable, record)
   } catch (loggingError) {
     console.error('[GerarPagantes] Falha ao gravar erro na tabela de logs.', loggingError)
+  }
+}
+
+export async function logAppOperation(context: OperationLogContext): Promise<void> {
+  const api = getXrm()?.WebApi
+  if (!api) return
+  const payload = {
+    operatorId: context.operatorId || '',
+    operatorName: context.operatorName || '',
+    financeiroVersion: context.financeiroVersion || '',
+    allocationSummary: context.allocationSummary ?? {},
+    payload: context.payload ?? {}
+  }
+  try {
+    await api.createRecord(errorLogTable, {
+      new_name: truncate(`${appName} - ${context.action}`, maxName),
+      new_occurredat: new Date().toISOString(),
+      new_severity: 'info',
+      new_source: 'Web Resource',
+      new_action: truncate(context.action, 180),
+      new_phase: 'operation',
+      new_component: 'dataverse',
+      new_detailid: context.detailId,
+      new_detailtype: 'cr40f_financeiro',
+      new_message: 'Geração de pagantes registrada.',
+      new_stack: '',
+      new_errorname: '',
+      new_errorcode: '',
+      new_appname: appName,
+      new_payloadjson: truncate(stringify(payload), maxStack),
+      new_rawjson: truncate(stringify({ occurredAt: new Date().toISOString(), ...payload }), maxStack)
+    })
+  } catch (error) {
+    console.error('[GerarPagantes] Falha ao gravar log operacional.', error)
   }
 }
 

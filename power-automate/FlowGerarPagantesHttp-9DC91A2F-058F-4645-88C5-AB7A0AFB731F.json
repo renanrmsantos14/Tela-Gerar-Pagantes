@@ -71,6 +71,18 @@
                 "financeiroDisplayId": {
                   "type": "string"
                 },
+                "operatorId": {
+                  "type": "string"
+                },
+                "operatorName": {
+                  "type": "string"
+                },
+                "financeiroVersion": {
+                  "type": "string"
+                },
+                "allocationSummary": {
+                  "type": "object"
+                },
                 "totalCents": {
                   "type": "integer"
                 },
@@ -144,7 +156,25 @@
             "body": {
               "success": true,
               "requestId": "@body('Parse_JSON_Payload')?['requestId']",
-                "message": "Processamento concluido."
+                "message": "Processamento concluido.",
+                "results": "@body('Select_Resultados_Por_Pagante')"
+            }
+          },
+          "runAfter": {
+            "Select_Resultados_Por_Pagante": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Select_Resultados_Por_Pagante": {
+          "type": "Select",
+          "inputs": {
+            "from": "@body('Parse_JSON_Payload')?['pagantes']",
+            "select": {
+              "paganteId": "@item()?['paganteId']",
+              "paganteRecordId": "@item()?['paganteRecordId']",
+              "linkStatus": "@if(equals(item()?['generateLink'], true), 'Pending', 'NotApplicable')",
+              "emailStatus": "@if(equals(item()?['sendEmail'], true), 'Pending', 'NotApplicable')"
             }
           },
           "runAfter": {
@@ -184,6 +214,14 @@
                   "Authorization": "@parameters('cieloBasicAuthorization')"
                 },
                 "body": "grant_type=client_credentials"
+              },
+              "retryPolicy": {
+                "type": "fixed",
+                "count": 2,
+                "interval": "PT5S"
+              },
+              "limit": {
+                "timeout": "PT30S"
               },
               "runtimeConfiguration": {
                 "secureData": {
@@ -380,7 +418,7 @@
                           "item/new_errorname": "SendEmailV2",
                           "item/new_errorcode": "",
                           "item/new_appname": "Tela Gerar Pagantes",
-                          "item/new_payloadjson": "@string(items('Apply_to_each_Pagante'))",
+                          "item/new_payloadjson": "@string(triggerBody())",
                           "item/new_rawjson": "@string(outputs('Send_Email_Link_Pagamento'))"
                         },
                         "host": {
@@ -468,7 +506,7 @@
                       "item/new_errorname": "HTTP_Gerar_Link_Cielo",
                       "item/new_errorcode": "",
                       "item/new_appname": "Tela Gerar Pagantes",
-                      "item/new_payloadjson": "@string(items('Apply_to_each_Pagante'))",
+                      "item/new_payloadjson": "@string(triggerBody())",
                       "item/new_rawjson": "@string(outputs('HTTP_Gerar_Link_Cielo'))"
                     },
                     "host": {

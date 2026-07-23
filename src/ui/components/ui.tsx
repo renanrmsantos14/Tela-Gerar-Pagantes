@@ -15,8 +15,9 @@ export function Badge({ children, tone = 'info' }: { children: ReactNode; tone?:
   return <span className={`ui-badge ui-badge--${tone}`}>{children}</span>
 }
 
-export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
-  return <div className="ui-field"><span>{label}</span>{children}{hint ? <small>{hint}</small> : null}</div>
+export function Field({ label, children, hint, inputId, error }: { label: string; children: ReactNode; hint?: string; inputId?: string; error?: string }) {
+  const describedBy = error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined
+  return <div className="ui-field"><label htmlFor={inputId}>{label}</label>{children}{error ? <small id={describedBy} role="alert">{error}</small> : hint ? <small id={describedBy}>{hint}</small> : null}</div>
 }
 
 export function Switch({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
