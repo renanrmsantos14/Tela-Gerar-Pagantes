@@ -4,6 +4,7 @@ import { getRecordIdFromLocation, loadOperation, submitOperation } from '../data
 import { logAppError } from '../errorLogger'
 import { formatCurrency, splitEvenly } from '../money'
 import { AllocationSummary } from './components/AllocationSummary'
+import { AllocationMismatchDialog } from './components/AllocationMismatchDialog'
 import { ExternalPayerDialog } from './components/ExternalPayerDialog'
 import { FeedbackNotice } from './components/FeedbackNotice'
 import { OperationHeader } from './components/OperationHeader'
@@ -26,6 +27,7 @@ export function App() {
   const [externalQuery, setExternalQuery] = useState('')
   const [externalOpen, setExternalOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [mismatchOpen, setMismatchOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<Notice>(null)
@@ -90,7 +92,9 @@ export function App() {
 
   async function save() {
     setAttemptedSave(true)
-    if (!operation || errors.length || saving) return
+    if (!operation || saving) return
+    if (remaining !== 0) { setMismatchOpen(true); return }
+    if (errors.length) return
     const risky = payers.some((payer) => payer.existingPayerId && payer.paymentStatus && payer.paymentStatus !== 'Pendente')
     if (risky) { setConfirmOpen(true); return }
     await executeSave()
@@ -116,7 +120,7 @@ export function App() {
   if (loading) return <div className="state-screen"><div className="skeleton skeleton--title" /><div className="skeleton skeleton--panel" /><small>{appVersion}</small></div>
   if (!operation) return <div className="state-screen"><strong>Não foi possível abrir esta OP.</strong>{notice ? <FeedbackNotice {...notice} /> : null}<button className="ui-button ui-button--secondary" onClick={() => void refresh()}>Tentar novamente</button><small>{appVersion}</small></div>
 
-  const actionHint = !selectionComplete ? 'Escolha os pagantes e avance' : errors.length ? 'Revise os campos pendentes' : 'Rateio pronto para gerar'
+  const actionHint = !selectionComplete ? 'Escolha os pagantes e avance' : remaining !== 0 ? 'Rateio divergente: revise os valores' : errors.length ? 'Revise os campos pendentes' : 'Rateio pronto para gerar'
 
   return <PopupShell onBackdropClick={isEmbedded ? () => closeEmbedded(false) : undefined}>
     <OperationHeader displayId={operation.displayId} serviceCount={operation.serviceCount} balanced={remaining === 0} onRefresh={() => void refresh()} onClose={isEmbedded ? () => closeEmbedded(true) : undefined} />
@@ -125,8 +129,9 @@ export function App() {
     <PeopleSelector people={involvedPeople} selectedIds={selectedIds} query={query} collapsed={selectionComplete} onQueryChange={setQuery} onToggle={togglePerson} onAddExternal={() => setExternalOpen(true)} onSplit={() => rebalance(payers)} onContinue={() => setSelectionComplete(true)} onEdit={() => setSelectionComplete(false)} />
     {selectionComplete ? <PayerList payers={payers} onChange={updatePayer} onEditSelection={() => setSelectionComplete(false)} /> : null}
     {attemptedSave && errors.length ? <div className="validation-panel" role="alert"><strong>Revise antes de continuar</strong><ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul></div> : null}
-    <StickyActionBar version={appVersion} hint={actionHint} ready={selectionComplete && !errors.length} saving={saving} confirm={false} onSave={() => void save()} />
+    <StickyActionBar version={appVersion} hint={actionHint} ready={selectionComplete} saving={saving} confirm={false} onSave={() => void save()} />
     <ExternalPayerDialog open={externalOpen} people={operation.directory} selectedIds={selectedIds} query={externalQuery} onQueryChange={setExternalQuery} onClose={() => setExternalOpen(false)} onSelect={addExternal} />
     <StatusConfirmationDialog open={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={() => void executeSave()} />
+    <AllocationMismatchDialog open={mismatchOpen} operationTotal={operation.totalCents} allocatedTotal={totalRateado} onClose={() => setMismatchOpen(false)} />
   </PopupShell>
 }
