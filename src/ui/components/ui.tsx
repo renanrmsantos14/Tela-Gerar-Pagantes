@@ -23,7 +23,7 @@ export function Switch({ label, checked, disabled, onChange }: { label: string; 
   return <label className="ui-switch"><input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} /><span className="ui-switch__track" aria-hidden="true"><span /></span><span>{label}</span></label>
 }
 
-export function Modal({ open, title, description, onClose, children }: { open: boolean; title: string; description?: string; onClose: () => void; children: ReactNode }) {
+export function Modal({ open, title, description, onClose, children, className = '' }: { open: boolean; title: string; description?: string; onClose: () => void; children: ReactNode; className?: string }) {
   const titleId = useId()
   const dialogRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -42,5 +42,5 @@ export function Modal({ open, title, description, onClose, children }: { open: b
     requestAnimationFrame(() => dialogRef.current?.querySelector<HTMLElement>('input[autofocus], input, button')?.focus())
     return () => { document.removeEventListener('keydown', onKeyDown); previous?.focus() }
   }, [open, onClose])
-  return open ? <div className="modal-layer" role="presentation" onMouseDown={onClose}><div ref={dialogRef} className="modal-card" role="dialog" aria-modal="true" aria-labelledby={titleId} onMouseDown={(event) => event.stopPropagation()}><div className="modal-card__header"><div><h2 id={titleId}>{title}</h2>{description ? <p>{description}</p> : null}</div><IconButton aria-label="Fechar" onClick={onClose}><X size={18} /></IconButton></div>{children}</div></div> : null
+  return open ? <div className="modal-layer" role="presentation" onMouseDown={onClose}><div ref={dialogRef} className={`modal-card ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} onMouseDown={(event) => event.stopPropagation()}><div className="modal-card__header"><div><h2 id={titleId}>{title}</h2>{description ? <p>{description}</p> : null}</div><IconButton aria-label="Fechar" onClick={onClose}><X size={18} /></IconButton></div>{children}</div></div> : null
 }
