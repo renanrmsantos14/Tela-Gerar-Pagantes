@@ -1,0 +1,22 @@
+{
+  "uniqueName": "cr40f_GerarPagantes",
+  "displayName": "Gerar Pagantes",
+  "bindingType": "Entity",
+  "boundEntityLogicalName": "cr40f_financeiro",
+  "isFunction": false,
+  "isPrivate": false,
+  "allowedCustomProcessingStepType": "SyncAndAsync",
+  "requestParameters": [
+    { "uniqueName": "cr40f_RequestJson", "type": "String", "isOptional": false }
+  ],
+  "responseProperties": [
+    { "uniqueName": "cr40f_ResponseJson", "type": "String" }
+  ],
+  "plugin": {
+    "typeName": "Cr40f.GerarPagantes.Plugin.GerarPagantesPlugin",
+    "stage": "MainOperation",
+    "mode": "Synchronous",
+    "unsecureConfiguration": "<CIELO_CLIENT_ID>",
+    "secureConfiguration": "<CIELO_CLIENT_SECRET>"
+  }
+}
