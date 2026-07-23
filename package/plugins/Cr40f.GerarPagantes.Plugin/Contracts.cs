@@ -8,6 +8,7 @@ public sealed class GerarPagantesRequest
     public Guid RequestId { get; set; }
     public string ExpectedFinanceiroVersion { get; set; } = string.Empty;
     public bool AllowTotalMismatch { get; set; }
+    public bool ReplaceExisting { get; set; }
     public List<PaganteRequest> Pagantes { get; set; } = new();
 }
 

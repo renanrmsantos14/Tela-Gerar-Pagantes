@@ -55,6 +55,7 @@ export interface SubmitRequest {
   financeiroDisplayId: string
   totalCents: number
   allowTotalMismatch: boolean
+  replaceExisting?: boolean
   serviceStartDate?: string | null
   serviceEndDate?: string | null
   pagantes: Array<{

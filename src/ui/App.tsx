@@ -7,6 +7,7 @@ import { AllocationSummary } from './components/AllocationSummary'
 import { AllocationMismatchDialog } from './components/AllocationMismatchDialog'
 import { BlockingErrorDialog } from './components/BlockingErrorDialog'
 import { ExternalPayerDialog } from './components/ExternalPayerDialog'
+import { ExistingPayersDialog } from './components/ExistingPayersDialog'
 import { FeedbackNotice } from './components/FeedbackNotice'
 import { OperationHeader } from './components/OperationHeader'
 import { PayerList } from './components/PayerList'
@@ -34,6 +35,8 @@ export function App() {
   const [externalQuery, setExternalQuery] = useState('')
   const [externalOpen, setExternalOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [existingPayersOpen, setExistingPayersOpen] = useState(false)
+  const [replaceExisting, setReplaceExisting] = useState(false)
   const [mismatchOpen, setMismatchOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -132,21 +135,24 @@ export function App() {
     if (remaining !== 0 && !allowTotalMismatch) { setMismatchOpen(true); return }
     const hasBlockingError = !payers.length || invalidAmountIds.size > 0 || payers.some((payer) => payer.amountCents <= 0 || payer.sendEmail && !emailValid(payer.email))
     if (hasBlockingError) return
+    if (operation.payers.length > 0 && !replaceExisting) { setExistingPayersOpen(true); return }
     const risky = payers.some((payer) => payer.existingPayerId && payer.paymentStatus && payer.paymentStatus !== 'Pendente')
     if (risky) { setConfirmOpen(true); return }
     await executeSave()
   }
 
-  async function executeSave() {
+  async function executeSave(forceReplace = replaceExisting) {
     if (!operation) return
     setSaving(true); setNotice(null); setSuccessFeedback(null); setBlockingError(null)
     try {
-       const result = await submitOperation(operation.id, { requestId: crypto.randomUUID(), expectedFinanceiroVersion: operation.version, financeiroDisplayId: operation.displayId, totalCents: operation.totalCents, allowTotalMismatch: remaining !== 0, serviceStartDate: operation.serviceStartDate, serviceEndDate: operation.serviceEndDate, pagantes: payers.map((payer) => ({ paganteId: payer.id, existingPaganteId: payer.existingPayerId, name: payer.name, email: payer.email, amountCents: payer.amountCents, paymentMethod: payer.paymentMethod, generateLink: payer.generateLink, sendEmail: payer.sendEmail })) })
+       const result = await submitOperation(operation.id, { requestId: crypto.randomUUID(), expectedFinanceiroVersion: operation.version, financeiroDisplayId: operation.displayId, totalCents: operation.totalCents, allowTotalMismatch: remaining !== 0, replaceExisting: forceReplace, serviceStartDate: operation.serviceStartDate, serviceEndDate: operation.serviceEndDate, pagantes: payers.map((payer) => ({ paganteId: payer.id, existingPaganteId: forceReplace ? undefined : payer.existingPayerId, name: payer.name, email: payer.email, amountCents: payer.amountCents, paymentMethod: payer.paymentMethod, generateLink: payer.generateLink, sendEmail: payer.sendEmail })) })
       if (!result.success) {
         const detail = result.errors.map((error) => error.message).join(' ') || 'O processamento não foi concluído.'
         throw new Error(`Pagantes gravados, mas a geração foi interrompida. ${detail} Corrija o erro e tente novamente.`)
       }
       setConfirmOpen(false)
+      setExistingPayersOpen(false)
+      setReplaceExisting(false)
       setSaved(true); setDirty(false)
       await refresh(true)
       setNotice(null)
@@ -181,6 +187,7 @@ export function App() {
     {successFeedback ? <SuccessFeedback text={successFeedback} /> : null}
     <ExternalPayerDialog open={externalOpen} people={operation.directory} selectedIds={selectedIds} query={externalQuery} onQueryChange={setExternalQuery} onClose={() => setExternalOpen(false)} onSelect={addExternal} />
     <StatusConfirmationDialog open={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={() => void executeSave()} />
+    <ExistingPayersDialog payers={operation.payers} open={existingPayersOpen} onReview={() => setExistingPayersOpen(false)} onReplace={() => { setExistingPayersOpen(false); setReplaceExisting(true); void executeSave(true) }} />
     <AllocationMismatchDialog open={mismatchOpen} operationTotal={operation.totalCents} allocatedTotal={totalRateado} onClose={() => setMismatchOpen(false)} onContinue={() => { setMismatchOpen(false); void save(true) }} />
     <BlockingErrorDialog message={blockingError} onClose={() => setBlockingError(null)} />
   </PopupShell>

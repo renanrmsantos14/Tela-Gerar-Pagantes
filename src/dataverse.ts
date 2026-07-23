@@ -11,6 +11,7 @@ interface XrmApi {
     createRecord: (entity: string, data: Record<string, unknown>) => Promise<{ id: string }>
     updateRecord: (entity: string, id: string, data: Record<string, unknown>) => Promise<void>
     deleteRecord: (entity: string, id: string) => Promise<void>
+    online?: { execute: (request: Record<string, unknown>) => Promise<{ ok?: boolean; json: () => Promise<Record<string, unknown>> }> }
   }
   Utility?: { getGlobalContext?: () => { userSettings?: { userId?: string; userName?: string } } }
 }
@@ -161,7 +162,7 @@ export async function loadOperation(recordId: Guid): Promise<OperationData> {
   const api = xrm.WebApi
   const finance = await api.retrieveRecord('cr40f_financeiro', recordId, '?$select=cr40f_idfinanceiro,versionnumber,statecode,statuscode,_ownerid_value')
   assertOperationEditable(finance)
-  const services = await fetchAll('cr40f_reservadeveiculos', `?$select=cr40f_reservadeveculosid,cr40f_dataehorriodesada,_cr40f_solicitante_value&$filter=_cr40f_financeiro_value eq ${recordId}`)
+  const services = await fetchAll('cr40f_reservadeveculos', `?$select=cr40f_reservadeveculosid,cr40f_dataehorriodesada,_cr40f_solicitante_value&$filter=_cr40f_financeiro_value eq ${recordId}`)
   const serviceIds = services.map((service) => text(service, 'cr40f_reservadeveculosid')).filter(Boolean)
   if (!serviceIds.length) throw new Error('Esta OP não possui serviços vinculados.')
   const serviceFilter = serviceIds.map((id) => `_cr40f_servicorelacionadogeral_value eq ${id}`).join(' or ')
@@ -252,9 +253,32 @@ export async function submitOperation(financeiroId: Guid, request: SubmitRequest
 
   const finance = await api.retrieveRecord('cr40f_financeiro', financeiroId, '?$select=versionnumber,statecode,statuscode,_ownerid_value')
   assertOperationEditable(finance)
-  if (text(finance, 'versionnumber') !== request.expectedFinanceiroVersion) throw new Error('A OP foi alterada por outro usuario. Atualize a tela e tente novamente.')
+  if (text(finance, 'versionnumber') !== request.expectedFinanceiroVersion) throw new Error('A OP foi alterada por outro usuário. Atualize a tela e tente novamente.')
   const freshTotalCents = await fetchOperationTotal(financeiroId)
   if (freshTotalCents !== request.totalCents) throw new Error('O valor da OP mudou. Atualize os dados antes de salvar.')
+
+  if (request.replaceExisting) {
+    const api = getXrm()?.WebApi.online
+    if (!api?.execute) throw new Error('A substituição segura não está publicada no ambiente. Nenhum pagante foi apagado.')
+    const customApiRequest = {
+      Target: { entityType: 'cr40f_financeiro', id: financeiroId },
+      cr40f_RequestJson: JSON.stringify({ ...request, replaceExisting: true, pagantes: request.pagantes.map((payer) => ({ ...payer, existingPaganteId: undefined, generateLink: false, sendEmail: false })) }),
+      getMetadata: () => ({ boundParameter: null, parameterTypes: { Target: { typeName: 'Microsoft.Dynamics.CRM.cr40f_financeiro', structuralProperty: 5 }, cr40f_RequestJson: { typeName: 'Edm.String', structuralProperty: 1 } }, operationType: 0, operationName: 'cr40f_GerarPagantes' })
+    }
+    const response = await api.execute(customApiRequest)
+    if (response.ok === false) throw new Error('A Cielo não confirmou o cancelamento dos links existentes. Nenhum pagante foi apagado.')
+    const body = await response.json()
+    const raw = String(body.cr40f_ResponseJson ?? '')
+    const customResult = raw ? JSON.parse(raw) as SubmitResult : null
+    if (!customResult?.success || !Array.isArray(customResult.results)) throw new Error('A substituição não foi confirmada pelo servidor. Nenhum pagante foi apagado.')
+    if (!request.pagantes.some((payer) => payer.generateLink || payer.sendEmail)) return customResult
+    const flowUrl = await resolveFlowUrl()
+    const flowResults = await startGerarPagantesFlow(flowUrl, financeiroId, request, customResult.results)
+    const byPayer = new Map(flowResults.map((item) => [item.paganteId, item]))
+    customResult.results.forEach((result) => Object.assign(result, byPayer.get(result.paganteId)))
+    customResult.success = customResult.errors.length === 0 && flowResults.every((item) => !item.error)
+    return customResult
+  }
 
   const needsFlow = request.pagantes.some((payer) => payer.generateLink || payer.sendEmail)
   const existingRows = await fetchExistingPayers(financeiroId)

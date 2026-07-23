@@ -54,13 +54,14 @@ public sealed class GerarPagantesPlugin : IPlugin
             var createdLinks = new List<string>();
             try
             {
+                if (request.ReplaceExisting) DeleteReplacedPayers(service, cielo, existing);
                 foreach (var payer in request.Pagantes)
                 {
                     var existingPayer = payer.ExistingPaganteId.HasValue && existing.TryGetValue(payer.ExistingPaganteId.Value, out var row) ? row : null;
                     var result = UpsertPayer(service, cielo, finance, target.Id, payer, existingPayer, request.RequestId, createdLinks);
                     response.Results.Add(result);
                 }
-                QueueRemovedPayers(service, existing, request.Pagantes.Select(p => p.ExistingPaganteId).Where(id => id.HasValue).Select(id => id!.Value));
+                if (!request.ReplaceExisting) QueueRemovedPayers(service, existing, request.Pagantes.Select(p => p.ExistingPaganteId).Where(id => id.HasValue).Select(id => id!.Value));
                 WriteOperation(service, request.RequestId, target.Id, true, response);
                 response.Success = true;
             }
@@ -208,6 +209,19 @@ public sealed class GerarPagantesPlugin : IPlugin
         {
             var linkId = row.GetAttributeValue<string>("cr40f_cielolinkid");
             if (!string.IsNullOrWhiteSpace(linkId)) QueueCleanup(service, linkId, "Substituído pelo rateio atual.");
+            service.Delete(Pagantes, row.Id);
+        }
+    }
+
+    private static void DeleteReplacedPayers(IOrganizationService service, CieloClient cielo, IReadOnlyDictionary<Guid, Entity> existing)
+    {
+        foreach (var row in existing.Values)
+        {
+            var linkId = row.GetAttributeValue<string>("cr40f_cielolinkid");
+            if (!string.IsNullOrWhiteSpace(linkId)) cielo.DeleteLinkAsync(linkId).GetAwaiter().GetResult();
+        }
+        foreach (var row in existing.Values)
+        {
             service.Delete(Pagantes, row.Id);
         }
     }
