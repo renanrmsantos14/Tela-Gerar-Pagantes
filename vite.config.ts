@@ -5,6 +5,9 @@ import packageJson from './package.json'
 export default defineConfig({
   base: './',
   plugins: [react()],
+  optimizeDeps: {
+    entries: ['index.html']
+  },
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version),
     __APP_DATE__: JSON.stringify(new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(new Date()))
