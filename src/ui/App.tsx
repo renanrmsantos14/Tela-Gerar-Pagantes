@@ -13,6 +13,7 @@ import { PeopleSelector } from './components/PeopleSelector'
 import { PopupShell } from './components/PopupShell'
 import { StatusConfirmationDialog } from './components/StatusConfirmationDialog'
 import { StickyActionBar } from './components/StickyActionBar'
+import { SuccessFeedback } from './components/SuccessFeedback'
 
 const appVersion = `v${__APP_VERSION__} ${__APP_DATE__}`
 type Notice = { tone: 'error' | 'success'; text: string } | null
@@ -41,12 +42,13 @@ export function App() {
   const [invalidAmountIds, setInvalidAmountIds] = useState<Set<string>>(new Set())
   const [dirty, setDirty] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [successFeedback, setSuccessFeedback] = useState<string | null>(null)
   const dirtyRef = useRef(false)
   const isEmbedded = new URLSearchParams(window.location.search).get('embedded') === '1'
 
   function closeEmbedded(refresh = false) {
     if (!isEmbedded || window.parent === window) return
-    if (dirty && !window.confirm('Existem alterações não salvas. Deseja sair mesmo assim?')) return
+    if (dirtyRef.current && !window.confirm('Existem alterações não salvas. Deseja sair mesmo assim?')) return
     window.parent.postMessage({ type: 'cr40f-gerar-pagantes:close', refresh }, window.location.origin)
   }
 
@@ -69,6 +71,11 @@ export function App() {
 
   useEffect(() => { dirtyRef.current = dirty }, [dirty])
   useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => {
+    if (!successFeedback) return
+    const timer = window.setTimeout(() => closeEmbedded(true), 1500)
+    return () => window.clearTimeout(timer)
+  }, [successFeedback])
 
   const totalRateado = useMemo(() => payers.reduce((sum, payer) => sum + payer.amountCents, 0), [payers])
   const remaining = (operation?.totalCents ?? 0) - totalRateado
@@ -138,7 +145,8 @@ export function App() {
       setConfirmOpen(false)
       setSaved(result.errors.length === 0); setDirty(false)
       await refresh(true)
-      setNotice({ tone: 'success', text: successText })
+      setNotice(null)
+      setSuccessFeedback(successText)
     } catch (error) {
       console.error('[GerarPagantes] Não foi possível gerar os pagantes.', { financeiroId: operation.id, error })
       await logAppError(error, { source: 'React', action: 'save', phase: 'submit-operation', component: 'App', detailId: operation.id, detailType: 'cr40f_financeiro' })
@@ -161,6 +169,7 @@ export function App() {
       {attemptedSave && errors.length ? <div className="validation-panel" role="alert"><strong>Revise antes de continuar</strong><ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul></div> : null}
     </div>
     <StickyActionBar version={appVersion} hint={actionHint} ready={selectionComplete} saving={saving} completed={saved} confirm={false} onSave={() => void save()} />
+    {successFeedback ? <SuccessFeedback text={successFeedback} /> : null}
     <ExternalPayerDialog open={externalOpen} people={operation.directory} selectedIds={selectedIds} query={externalQuery} onQueryChange={setExternalQuery} onClose={() => setExternalOpen(false)} onSelect={addExternal} />
     <StatusConfirmationDialog open={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={() => void executeSave()} />
     <AllocationMismatchDialog open={mismatchOpen} operationTotal={operation.totalCents} allocatedTotal={totalRateado} onClose={() => setMismatchOpen(false)} onContinue={() => { setMismatchOpen(false); void save(true) }} />
