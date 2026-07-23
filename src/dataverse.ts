@@ -350,7 +350,7 @@ function keptIdsFor(request: SubmitRequest): Set<string> { return new Set(reques
 function buildPayerRecord(financeiroId: Guid, payer: SubmitRequest['pagantes'][number], resetLink: boolean): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     'cr40f_Financeiro@odata.bind': `/cr40f_financeiros(${financeiroId})`,
-    'cr40f_bancodedados@odata.bind': `/cr40f_bancodedadoses(${payer.paganteId})`,
+    'cr40f_BancodeDados@odata.bind': `/cr40f_bancodedadoses(${payer.paganteId})`,
     cr40f_valor: payer.amountCents / 100,
     cr40f_formadepagamento: payer.paymentMethod,
     cr40f_status: payerStatusPending,
