@@ -5,6 +5,7 @@ import { logAppError } from '../errorLogger'
 import { formatCurrency, splitEvenly } from '../money'
 import { AllocationSummary } from './components/AllocationSummary'
 import { AllocationMismatchDialog } from './components/AllocationMismatchDialog'
+import { BlockingErrorDialog } from './components/BlockingErrorDialog'
 import { ExternalPayerDialog } from './components/ExternalPayerDialog'
 import { FeedbackNotice } from './components/FeedbackNotice'
 import { OperationHeader } from './components/OperationHeader'
@@ -43,6 +44,7 @@ export function App() {
   const [dirty, setDirty] = useState(false)
   const [saved, setSaved] = useState(false)
   const [successFeedback, setSuccessFeedback] = useState<string | null>(null)
+  const [blockingError, setBlockingError] = useState<string | null>(null)
   const dirtyRef = useRef(false)
   const contentRef = useRef<HTMLDivElement>(null)
   const isEmbedded = new URLSearchParams(window.location.search).get('embedded') === '1'
@@ -137,7 +139,7 @@ export function App() {
 
   async function executeSave() {
     if (!operation) return
-    setSaving(true); setNotice(null); setSuccessFeedback(null)
+    setSaving(true); setNotice(null); setSuccessFeedback(null); setBlockingError(null)
     try {
       const result = await submitOperation(operation.id, { requestId: crypto.randomUUID(), expectedFinanceiroVersion: operation.version, financeiroDisplayId: operation.displayId, totalCents: operation.totalCents, allowTotalMismatch: remaining !== 0, serviceStartDate: null, serviceEndDate: null, pagantes: payers.map((payer) => ({ paganteId: payer.id, existingPaganteId: payer.existingPayerId, name: payer.name, email: payer.email, amountCents: payer.amountCents, paymentMethod: payer.paymentMethod, generateLink: payer.generateLink, sendEmail: payer.sendEmail })) })
       if (!result.success) {
@@ -154,7 +156,9 @@ export function App() {
       await logAppError(error, { source: 'React', action: 'save', phase: 'submit-operation', component: 'App', detailId: operation.id, detailType: 'cr40f_financeiro' })
       setConfirmOpen(false)
       setMismatchOpen(false)
-      setNotice({ tone: 'error', text: errorMessage(error, 'Não foi possível gerar os pagantes.') })
+      const message = errorMessage(error, 'Não foi possível gerar os pagantes.')
+      setNotice({ tone: 'error', text: message })
+      setBlockingError(message)
       window.requestAnimationFrame(() => contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' }))
     } finally { setSaving(false) }
   }
@@ -178,5 +182,6 @@ export function App() {
     <ExternalPayerDialog open={externalOpen} people={operation.directory} selectedIds={selectedIds} query={externalQuery} onQueryChange={setExternalQuery} onClose={() => setExternalOpen(false)} onSelect={addExternal} />
     <StatusConfirmationDialog open={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={() => void executeSave()} />
     <AllocationMismatchDialog open={mismatchOpen} operationTotal={operation.totalCents} allocatedTotal={totalRateado} onClose={() => setMismatchOpen(false)} onContinue={() => { setMismatchOpen(false); void save(true) }} />
+    <BlockingErrorDialog message={blockingError} onClose={() => setBlockingError(null)} />
   </PopupShell>
 }

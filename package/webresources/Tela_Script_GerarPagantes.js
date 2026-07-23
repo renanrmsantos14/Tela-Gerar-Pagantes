@@ -105,7 +105,7 @@ var Cr40fGerarPagantes = (function () {
     frame.setAttribute('allowtransparency', 'true');
     frame.setAttribute('allow', 'clipboard-write');
     var clientUrl = Xrm.Utility.getGlobalContext().getClientUrl().replace(/\/$/, '');
-    frame.src = clientUrl + '/WebResources/Tela_GerarPagantes/index.html?recordId=' + encodeURIComponent(recordId) + '&embedded=1';
+    frame.src = clientUrl + '/WebResources/Tela_GerarPagantes/index.html?recordId=' + encodeURIComponent(recordId) + '&embedded=1&cacheBust=' + Date.now();
     overlay.appendChild(backdrop);
     overlay.appendChild(frame);
     (hostDocument.head || hostDocument.documentElement).appendChild(style);
