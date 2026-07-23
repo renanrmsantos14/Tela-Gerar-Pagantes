@@ -141,7 +141,7 @@ export function App() {
     if (!operation) return
     setSaving(true); setNotice(null); setSuccessFeedback(null); setBlockingError(null)
     try {
-      const result = await submitOperation(operation.id, { requestId: crypto.randomUUID(), expectedFinanceiroVersion: operation.version, financeiroDisplayId: operation.displayId, totalCents: operation.totalCents, allowTotalMismatch: remaining !== 0, serviceStartDate: null, serviceEndDate: null, pagantes: payers.map((payer) => ({ paganteId: payer.id, existingPaganteId: payer.existingPayerId, name: payer.name, email: payer.email, amountCents: payer.amountCents, paymentMethod: payer.paymentMethod, generateLink: payer.generateLink, sendEmail: payer.sendEmail })) })
+       const result = await submitOperation(operation.id, { requestId: crypto.randomUUID(), expectedFinanceiroVersion: operation.version, financeiroDisplayId: operation.displayId, totalCents: operation.totalCents, allowTotalMismatch: remaining !== 0, serviceStartDate: operation.serviceStartDate, serviceEndDate: operation.serviceEndDate, pagantes: payers.map((payer) => ({ paganteId: payer.id, existingPaganteId: payer.existingPayerId, name: payer.name, email: payer.email, amountCents: payer.amountCents, paymentMethod: payer.paymentMethod, generateLink: payer.generateLink, sendEmail: payer.sendEmail })) })
       if (!result.success) {
         const detail = result.errors.map((error) => error.message).join(' ') || 'O processamento não foi concluído.'
         throw new Error(`Pagantes gravados, mas a geração foi interrompida. ${detail} Corrija o erro e tente novamente.`)

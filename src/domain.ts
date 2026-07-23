@@ -38,6 +38,8 @@ export interface OperationData {
   displayId: string
   version: string
   serviceCount: number
+  serviceStartDate: string | null
+  serviceEndDate: string | null
   totalCents: number
   statusLabel: string
   stateCode: number

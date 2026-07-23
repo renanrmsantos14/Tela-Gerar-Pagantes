@@ -109,6 +109,15 @@ const text = (row: Record<string, unknown>, field: string) => String(row[field] 
 const lookup = (row: Record<string, unknown>, field: string) => row[field] ? String(row[field]) : undefined
 const moneyToCents = (value: unknown) => Math.round(Number(value ?? 0) * 100)
 
+function toBrazilDateOnly(value: unknown): string | null {
+  if (!value) return null
+  const date = new Date(String(value))
+  if (Number.isNaN(date.getTime())) return null
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date)
+  const values = Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
+
 function toPerson(row: Record<string, unknown>, role: Person['role']): Person {
   return {
     id: text(row, 'cr40f_bancodedadosid'),
@@ -152,7 +161,7 @@ export async function loadOperation(recordId: Guid): Promise<OperationData> {
   const api = xrm.WebApi
   const finance = await api.retrieveRecord('cr40f_financeiro', recordId, '?$select=cr40f_idfinanceiro,versionnumber,statecode,statuscode,_ownerid_value')
   assertOperationEditable(finance)
-  const services = await fetchAll('cr40f_reservadeveculos', `?$select=cr40f_reservadeveculosid,_cr40f_solicitante_value&$filter=_cr40f_financeiro_value eq ${recordId}`)
+  const services = await fetchAll('cr40f_reservadeveiculos', `?$select=cr40f_reservadeveculosid,cr40f_dataehorriodesada,_cr40f_solicitante_value&$filter=_cr40f_financeiro_value eq ${recordId}`)
   const serviceIds = services.map((service) => text(service, 'cr40f_reservadeveculosid')).filter(Boolean)
   if (!serviceIds.length) throw new Error('Esta OP nao possui servicos vinculados.')
   const serviceFilter = serviceIds.map((id) => `_cr40f_servicorelacionadogeral_value eq ${id}`).join(' or ')
@@ -164,6 +173,7 @@ export async function loadOperation(recordId: Guid): Promise<OperationData> {
     fetchAll('cr40f_bancodedados', '?$select=cr40f_bancodedadosid,cr40f_nomedopassageiro,cr40f_email,cr40f_telefone&$orderby=cr40f_nomedopassageiro asc')
   ])
   const totalCents = Math.round(compositions.reduce((sum, row) => sum + Number(row.new_valortotal ?? 0), 0) * 100)
+  const serviceDates = services.map((service) => ({ timestamp: Date.parse(text(service, 'cr40f_dataehorriodesada')), date: toBrazilDateOnly(service.cr40f_dataehorriodesada) })).filter((service): service is { timestamp: number; date: string } => Boolean(service.date) && !Number.isNaN(service.timestamp)).sort((left, right) => left.timestamp - right.timestamp)
   const requesterIds = services.map((service) => lookup(service, '_cr40f_solicitante_value')).filter((id): id is string => Boolean(id))
   const passengerIds = servicePassengers.map((row) => lookup(row, '_cr40f_bancodedados_value')).filter((id): id is string => Boolean(id))
   const involvedIds = new Set([...requesterIds, ...passengerIds])
@@ -177,6 +187,8 @@ export async function loadOperation(recordId: Guid): Promise<OperationData> {
     displayId: text(finance, 'cr40f_idfinanceiro') || recordId,
     version: text(finance, 'versionnumber'),
     serviceCount: services.length,
+    serviceStartDate: serviceDates[0]?.date ?? null,
+    serviceEndDate: serviceDates.at(-1)?.date ?? null,
     totalCents,
     statusLabel: text(finance, 'statuscode@OData.Community.Display.V1.FormattedValue'),
     stateCode: Number(finance.statecode ?? 0),

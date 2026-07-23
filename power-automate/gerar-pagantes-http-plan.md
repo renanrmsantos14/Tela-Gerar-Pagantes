@@ -106,7 +106,7 @@ Payload esperado:
   "shipping": { "type": "WithoutShipping" },
   "type": "Service",
   "name": "@{triggerBody()?['financeiroDisplayId']} | @{items('Apply_to_each_Pagante')?['name']}",
-  "description": "Servicos prestados de transporte no periodo @{triggerBody()?['serviceStartDate']} - @{triggerBody()?['serviceEndDate']}",
+  "description": "Servicos prestados de transporte no periodo @{if(empty(triggerBody()?['serviceStartDate']), '', formatDateTime(triggerBody()?['serviceStartDate'], 'dd/MM/yyyy'))} - @{if(empty(triggerBody()?['serviceEndDate']), '', formatDateTime(triggerBody()?['serviceEndDate'], 'dd/MM/yyyy'))}",
   "showDescription": true,
   "price": "@{items('Apply_to_each_Pagante')?['amountCents']}",
   "maxNumberOfInstallments": 1,

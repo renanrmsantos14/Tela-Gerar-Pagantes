@@ -286,7 +286,7 @@
                       },
                       "type": "Service",
                       "name": "@{body('Parse_JSON_Payload')?['financeiroDisplayId']} | @{items('Apply_to_each_Pagante')?['name']}",
-                      "description": "Servicos prestados de transporte no periodo @{coalesce(body('Parse_JSON_Payload')?['serviceStartDate'], '')} - @{coalesce(body('Parse_JSON_Payload')?['serviceEndDate'], '')}",
+                      "description": "Servicos prestados de transporte no periodo @{if(empty(body('Parse_JSON_Payload')?['serviceStartDate']), '', formatDateTime(body('Parse_JSON_Payload')?['serviceStartDate'], 'dd/MM/yyyy'))} - @{if(empty(body('Parse_JSON_Payload')?['serviceEndDate']), '', formatDateTime(body('Parse_JSON_Payload')?['serviceEndDate'], 'dd/MM/yyyy'))}",
                       "showDescription": true,
                       "price": "@{items('Apply_to_each_Pagante')?['amountCents']}",
                       "maxNumberOfInstallments": 1,

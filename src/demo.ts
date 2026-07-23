@@ -5,6 +5,8 @@ export const demoOperation: OperationData = {
   displayId: 'OP-2026-0148',
   version: '1',
   serviceCount: 3,
+  serviceStartDate: '2026-01-15',
+  serviceEndDate: '2026-01-17',
   totalCents: 482750,
   statusLabel: 'Em aberto',
   stateCode: 0,
