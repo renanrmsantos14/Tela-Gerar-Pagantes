@@ -1,0 +1,13 @@
+<environmentvariabledefinition schemaname="new_FlowURLGerarPagantesHttp">
+  <description default="URL do Flow HTTP Gerar Pagantes">
+    <label description="URL do Flow HTTP Gerar Pagantes" languagecode="1046" />
+  </description>
+  <displayname default="Flow URL Gerar Pagantes HTTP">
+    <label description="Flow URL Gerar Pagantes HTTP" languagecode="1046" />
+  </displayname>
+  <introducedversion>1.0.0.0</introducedversion>
+  <iscustomizable>1</iscustomizable>
+  <isrequired>0</isrequired>
+  <secretstore>0</secretstore>
+  <type>100000000</type>
+</environmentvariabledefinition>

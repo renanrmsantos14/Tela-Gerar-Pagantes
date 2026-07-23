@@ -1,0 +1,418 @@
+{
+  "properties": {
+    "connectionReferences": {
+      "shared_commondataserviceforapps": {
+        "api": {
+          "name": "shared_commondataserviceforapps"
+        },
+        "connection": {
+          "connectionReferenceLogicalName": "new_sharedcommondataserviceforapps_8b47d"
+        },
+        "runtimeSource": "embedded"
+      },
+      "shared_office365": {
+        "api": {
+          "name": "shared_office365"
+        },
+        "connection": {
+          "connectionReferenceLogicalName": "new_sharedoffice365_de4c0"
+        },
+        "runtimeSource": "embedded"
+      }
+    },
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "$authentication": {
+          "defaultValue": {},
+          "type": "SecureObject"
+        },
+        "$connections": {
+          "defaultValue": {},
+          "type": "Object"
+        },
+        "cieloBasicAuthorization": {
+          "defaultValue": "",
+          "type": "SecureString"
+        }
+      },
+      "triggers": {
+        "manual": {
+          "type": "Request",
+          "kind": "Http",
+          "inputs": {
+            "triggerAuthenticationType": "All"
+          },
+          "metadata": {}
+        }
+      },
+      "actions": {
+        "Parse_JSON_Payload": {
+          "type": "ParseJson",
+          "inputs": {
+            "content": "@json(triggerBody())",
+            "schema": {
+              "type": "object",
+              "required": [
+                "requestId",
+                "financeiroId",
+                "financeiroDisplayId",
+                "totalCents",
+                "pagantes"
+              ],
+              "properties": {
+                "requestId": {
+                  "type": "string"
+                },
+                "financeiroId": {
+                  "type": "string"
+                },
+                "financeiroDisplayId": {
+                  "type": "string"
+                },
+                "totalCents": {
+                  "type": "integer"
+                },
+                "serviceStartDate": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "serviceEndDate": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "pagantes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "paganteRecordId",
+                      "paganteId",
+                      "name",
+                      "email",
+                      "amountCents",
+                      "paymentMethod",
+                      "generateLink",
+                      "sendEmail"
+                    ],
+                    "properties": {
+                      "paganteRecordId": {
+                        "type": "string"
+                      },
+                      "paganteId": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "email": {
+                        "type": "string"
+                      },
+                      "amountCents": {
+                        "type": "integer"
+                      },
+                      "paymentMethod": {
+                        "type": "integer"
+                      },
+                      "generateLink": {
+                        "type": "boolean"
+                      },
+                      "sendEmail": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "runAfter": {}
+        },
+        "Response_Accepted": {
+          "type": "Response",
+          "kind": "Http",
+          "inputs": {
+            "statusCode": 202,
+            "body": {
+              "success": true,
+              "requestId": "@body('Parse_JSON_Payload')?['requestId']",
+              "message": "Processamento iniciado."
+            }
+          },
+          "runAfter": {
+            "Parse_JSON_Payload": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Filter_Pagantes_Com_Link": {
+          "type": "Query",
+          "inputs": {
+            "from": "@body('Parse_JSON_Payload')?['pagantes']",
+            "where": "@equals(item()?['generateLink'], true)"
+          },
+          "runAfter": {
+            "Response_Accepted": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Condition_Tem_Link": {
+          "type": "If",
+          "expression": {
+            "greater": [
+              "@length(body('Filter_Pagantes_Com_Link'))",
+              0
+            ]
+          },
+          "actions": {
+            "HTTP_Obter_Access_Token": {
+              "type": "Http",
+              "inputs": {
+                "uri": "https://cieloecommerce.cielo.com.br/api/public/v2/token",
+                "method": "POST",
+                "headers": {
+                  "Content-Type": "application/x-www-form-urlencoded",
+                  "Authorization": "@parameters('cieloBasicAuthorization')"
+                },
+                "body": "grant_type=client_credentials"
+              },
+              "runtimeConfiguration": {
+                "secureData": {
+                  "properties": [
+                    "inputs",
+                    "outputs"
+                  ]
+                },
+                "contentTransfer": {
+                  "transferMode": "Chunked"
+                }
+              }
+            },
+            "Parse_JSON_Access_Token": {
+              "type": "ParseJson",
+              "inputs": {
+                "content": "@body('HTTP_Obter_Access_Token')",
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "runAfter": {
+                "HTTP_Obter_Access_Token": [
+                  "Succeeded"
+                ]
+              }
+            },
+            "Apply_to_each_Pagante": {
+              "type": "Foreach",
+              "foreach": "@body('Filter_Pagantes_Com_Link')",
+              "actions": {
+                "Compose_Order_Number": {
+                  "type": "Compose",
+                  "inputs": "@toUpper(substring(replace(concat(items('Apply_to_each_Pagante')?['paganteRecordId'], body('Parse_JSON_Payload')?['requestId']), '-', ''), 0, 20))"
+                },
+                "HTTP_Gerar_Link_Cielo": {
+                  "type": "Http",
+                  "inputs": {
+                    "uri": "https://cieloecommerce.cielo.com.br/api/public/v1/products/",
+                    "method": "POST",
+                    "headers": {
+                      "Authorization": "Bearer @{body('Parse_JSON_Access_Token')?['access_token']}",
+                      "Content-Type": "application/json"
+                    },
+                    "body": {
+                      "shipping": {
+                        "type": "WithoutShipping"
+                      },
+                      "type": "Service",
+                      "name": "@{body('Parse_JSON_Payload')?['financeiroDisplayId']} | @{items('Apply_to_each_Pagante')?['name']}",
+                      "description": "Servicos prestados de transporte no periodo @{coalesce(body('Parse_JSON_Payload')?['serviceStartDate'], '')} - @{coalesce(body('Parse_JSON_Payload')?['serviceEndDate'], '')}",
+                      "showDescription": true,
+                      "price": "@{items('Apply_to_each_Pagante')?['amountCents']}",
+                      "maxNumberOfInstallments": 1,
+                      "softDescriptor": "Betinhos",
+                      "OrderNumber": "@{outputs('Compose_Order_Number')}"
+                    },
+                    "retryPolicy": {
+                      "type": "fixed",
+                      "count": 2,
+                      "interval": "PT10S"
+                    }
+                  },
+                  "runAfter": {
+                    "Compose_Order_Number": [
+                      "Succeeded"
+                    ]
+                  },
+                  "limit": {
+                    "timeout": "PT70S"
+                  },
+                  "runtimeConfiguration": {
+                    "contentTransfer": {
+                      "transferMode": "Chunked"
+                    }
+                  }
+                },
+                "Update_Pagante_Link_Sucesso": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "parameters": {
+                      "entityName": "cr40f_paganteses",
+                      "recordId": "@items('Apply_to_each_Pagante')?['paganteRecordId']",
+                      "item/cr40f_cielolinkid": "@coalesce(body('HTTP_Gerar_Link_Cielo')?['id'], body('HTTP_Gerar_Link_Cielo')?['Id'], '')",
+                      "item/cr40f_cieloordernumber": "@outputs('Compose_Order_Number')",
+                      "item/cr40f_linkdepagamento": "@body('HTTP_Gerar_Link_Cielo')?['shortUrl']",
+                      "item/cr40f_statusgeracaolink": 202410002,
+                      "item/cr40f_errogeracaolink": null
+                    },
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps",
+                      "operationId": "UpdateOnlyRecord",
+                      "connectionName": "shared_commondataserviceforapps"
+                    }
+                  },
+                  "runAfter": {
+                    "HTTP_Gerar_Link_Cielo": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Condition_Enviar_Email": {
+                  "type": "If",
+                  "expression": {
+                    "equals": [
+                      "@items('Apply_to_each_Pagante')?['sendEmail']",
+                      true
+                    ]
+                  },
+                  "actions": {
+                    "Send_Email_Link_Pagamento": {
+                      "type": "OpenApiConnection",
+                      "inputs": {
+                        "parameters": {
+                          "emailMessage/To": "@items('Apply_to_each_Pagante')?['email']",
+                          "emailMessage/Subject": "Link de pagamento @{body('Parse_JSON_Payload')?['financeiroDisplayId']}",
+                          "emailMessage/Body": "<p>Ola @{items('Apply_to_each_Pagante')?['name']},</p><p>Segue o link de pagamento referente aos servicos Betinhos:</p><p><a href=\"@{body('HTTP_Gerar_Link_Cielo')?['shortUrl']}\">Abrir link de pagamento</a></p><p>Financeiro Betinhos</p>",
+                          "emailMessage/From": "noreply@betinhos.com.br",
+                          "emailMessage/ReplyTo": "financeiro@betinhos.com.br",
+                          "emailMessage/Importance": "Normal"
+                        },
+                        "host": {
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+                          "operationId": "SendEmailV2",
+                          "connectionName": "shared_office365"
+                        }
+                      }
+                    },
+                    "Update_Pagante_Email_Sucesso": {
+                      "type": "OpenApiConnection",
+                      "inputs": {
+                        "parameters": {
+                          "entityName": "cr40f_paganteses",
+                          "recordId": "@items('Apply_to_each_Pagante')?['paganteRecordId']",
+                          "item/cr40f_dataenvioemail": "@utcNow()",
+                          "item/cr40f_erroenvioemail": null
+                        },
+                        "host": {
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps",
+                          "operationId": "UpdateOnlyRecord",
+                          "connectionName": "shared_commondataserviceforapps"
+                        }
+                      },
+                      "runAfter": {
+                        "Send_Email_Link_Pagamento": [
+                          "Succeeded"
+                        ]
+                      }
+                    },
+                    "Update_Pagante_Email_Erro": {
+                      "type": "OpenApiConnection",
+                      "inputs": {
+                        "parameters": {
+                          "entityName": "cr40f_paganteses",
+                          "recordId": "@items('Apply_to_each_Pagante')?['paganteRecordId']",
+                          "item/cr40f_erroenvioemail": "@string(outputs('Send_Email_Link_Pagamento'))"
+                        },
+                        "host": {
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps",
+                          "operationId": "UpdateOnlyRecord",
+                          "connectionName": "shared_commondataserviceforapps"
+                        }
+                      },
+                      "runAfter": {
+                        "Send_Email_Link_Pagamento": [
+                          "Failed",
+                          "TimedOut"
+                        ]
+                      }
+                    }
+                  },
+                  "else": {
+                    "actions": {}
+                  },
+                  "runAfter": {
+                    "Update_Pagante_Link_Sucesso": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Update_Pagante_Link_Erro": {
+                  "type": "OpenApiConnection",
+                  "inputs": {
+                    "parameters": {
+                      "entityName": "cr40f_paganteses",
+                      "recordId": "@items('Apply_to_each_Pagante')?['paganteRecordId']",
+                      "item/cr40f_errogeracaolink": "@string(outputs('HTTP_Gerar_Link_Cielo'))"
+                    },
+                    "host": {
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps",
+                      "operationId": "UpdateOnlyRecord",
+                      "connectionName": "shared_commondataserviceforapps"
+                    }
+                  },
+                  "runAfter": {
+                    "HTTP_Gerar_Link_Cielo": [
+                      "Failed",
+                      "TimedOut"
+                    ]
+                  }
+                }
+              },
+              "runAfter": {
+                "Parse_JSON_Access_Token": [
+                  "Succeeded"
+                ]
+              },
+              "runtimeConfiguration": {
+                "concurrency": {
+                  "repetitions": 1
+                }
+              }
+            }
+          },
+          "else": {
+            "actions": {}
+          },
+          "runAfter": {
+            "Filter_Pagantes_Com_Link": [
+              "Succeeded"
+            ]
+          }
+        }
+      },
+      "outputs": {}
+    },
+    "templateName": null
+  },
+  "schemaVersion": "1.0.0.0"
+}

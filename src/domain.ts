@@ -45,9 +45,15 @@ export interface OperationData {
 export interface SubmitRequest {
   requestId: Guid
   expectedFinanceiroVersion: string
+  financeiroDisplayId: string
+  totalCents: number
+  serviceStartDate?: string | null
+  serviceEndDate?: string | null
   pagantes: Array<{
     paganteId: Guid
     existingPaganteId?: Guid
+    name: string
+    email: string
     amountCents: number
     paymentMethod: PaymentMethod
     generateLink: boolean

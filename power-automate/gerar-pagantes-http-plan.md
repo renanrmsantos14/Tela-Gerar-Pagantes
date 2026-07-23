@@ -16,6 +16,10 @@ Flow antigo usado como base local:
 
 `C:\Users\mendo\Desktop\Betinhos\App-motoristas-v2\tmp\AppBetinhos_165_unpacked_check\Workflows\FlowGerarLinkdePagamento-0BCD0073-68DF-F011-8406-002248E14E09.json`
 
+Artefato novo criado neste repo:
+
+`power-automate/FlowGerarPagantesHttp-9DC91A2F-058F-4645-88C5-AB7A0AFB731F.json`
+
 Pontos confirmados:
 
 - Gatilho antigo: `PowerAppV2`.
@@ -31,6 +35,8 @@ Pontos confirmados:
 Schema fonte:
 
 `power-automate/gerar-pagantes-http.schema.json`
+
+O Web Resource envia o corpo como texto JSON via `fetch(..., { mode: "no-cors", Content-Type: "text/plain;charset=UTF-8" })`. No Flow, use `json(triggerBody())` antes do `Parse JSON`.
 
 Payload esperado:
 
@@ -60,7 +66,9 @@ Payload esperado:
 ## Fluxo proposto
 
 1. `manual`
-   - Trigger HTTP Request com o schema acima.
+   - Trigger HTTP Request.
+   - Sem schema direto no trigger, porque o browser envia `text/plain` para evitar bloqueio de CORS.
+   - Primeira acao: `Parse_JSON_Payload` com `json(triggerBody())` e o schema acima.
 
 2. `Response_Accepted`
    - Responder rapidamente `202` ou `200` para o Web Resource nao ficar preso na geracao.
@@ -164,12 +172,12 @@ Nao inventar esses valores no Flow. Confirmar por metadata Dataverse antes do de
 
 ## Web Resource
 
-Mudanca seguinte no app:
+Mudanca implementada no app:
 
-1. Trocar `submitOperation()` para salvar `cr40f_pagantes` via `Xrm.WebApi`.
-2. Remover chamada direta da Custom API `cr40f_GerarPagantes`.
-3. Chamar o Flow HTTP depois que os registros forem criados/atualizados.
-4. Guardar URL do Flow em variavel de ambiente Dataverse ou webresource config, nunca hardcoded definitivo.
+1. `submitOperation()` salva `cr40f_pagantes` via `Xrm.WebApi`.
+2. A chamada direta da Custom API `cr40f_GerarPagantes` foi removida.
+3. O Flow HTTP e acionado depois que os registros sao criados/atualizados.
+4. URL do Flow deve ficar na variavel de ambiente `new_FlowURLGerarPagantesHttp`.
 
 ## Importacao e deploy
 
@@ -188,4 +196,3 @@ Depois de o Codex ser reiniciado e o MCP `power-platform-cli` carregar, caminho 
 3. aplicar definicao acima.
 4. importar na solucao `appbetinhos`.
 5. testar com payload controlado, somente com aprovacao antes porque pode gerar link/e-mail real.
-

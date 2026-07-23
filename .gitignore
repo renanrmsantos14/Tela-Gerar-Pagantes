@@ -4,3 +4,4 @@ coverage/
 bin/
 obj/
 .env
+tmp/

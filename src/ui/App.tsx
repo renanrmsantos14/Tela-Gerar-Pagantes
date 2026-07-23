@@ -95,9 +95,10 @@ export function App() {
     if (!operation) return
     setSaving(true); setNotice(null)
     try {
-      const result = await submitOperation(operation.id, { requestId: crypto.randomUUID(), expectedFinanceiroVersion: operation.version, pagantes: payers.map((payer) => ({ paganteId: payer.id, existingPaganteId: payer.existingPayerId, amountCents: payer.amountCents, paymentMethod: payer.paymentMethod, generateLink: payer.generateLink, sendEmail: payer.sendEmail })) })
+      const result = await submitOperation(operation.id, { requestId: crypto.randomUUID(), expectedFinanceiroVersion: operation.version, financeiroDisplayId: operation.displayId, totalCents: operation.totalCents, serviceStartDate: null, serviceEndDate: null, pagantes: payers.map((payer) => ({ paganteId: payer.id, existingPaganteId: payer.existingPayerId, name: payer.name, email: payer.email, amountCents: payer.amountCents, paymentMethod: payer.paymentMethod, generateLink: payer.generateLink, sendEmail: payer.sendEmail })) })
       if (!result.success) throw new Error(result.errors.map((error) => error.message).join(' ') || 'A operação não foi concluída.')
-      setNotice({ tone: 'success', text: 'Pagantes gravados. E-mails serão enviados após o processamento.' }); setConfirmOpen(false); await refresh()
+      const flowError = result.errors.find((error) => error.code === 'FLOW_NOT_STARTED')
+      setNotice({ tone: 'success', text: flowError ? `Pagantes gravados. Processamento pendente: ${flowError.message}` : 'Pagantes gravados. E-mails serão enviados após o processamento.' }); setConfirmOpen(false); await refresh()
     } catch (error) {
       setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível gerar os pagantes.' })
     } finally { setSaving(false) }
