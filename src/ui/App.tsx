@@ -44,6 +44,7 @@ export function App() {
   const [saved, setSaved] = useState(false)
   const [successFeedback, setSuccessFeedback] = useState<string | null>(null)
   const dirtyRef = useRef(false)
+  const contentRef = useRef<HTMLDivElement>(null)
   const isEmbedded = new URLSearchParams(window.location.search).get('embedded') === '1'
 
   function closeEmbedded(refresh = false) {
@@ -136,21 +137,25 @@ export function App() {
 
   async function executeSave() {
     if (!operation) return
-    setSaving(true); setNotice(null)
+    setSaving(true); setNotice(null); setSuccessFeedback(null)
     try {
       const result = await submitOperation(operation.id, { requestId: crypto.randomUUID(), expectedFinanceiroVersion: operation.version, financeiroDisplayId: operation.displayId, totalCents: operation.totalCents, allowTotalMismatch: remaining !== 0, serviceStartDate: null, serviceEndDate: null, pagantes: payers.map((payer) => ({ paganteId: payer.id, existingPaganteId: payer.existingPayerId, name: payer.name, email: payer.email, amountCents: payer.amountCents, paymentMethod: payer.paymentMethod, generateLink: payer.generateLink, sendEmail: payer.sendEmail })) })
-      if (!result.success) throw new Error(result.errors.map((error) => error.message).join(' ') || 'A operação não foi concluída.')
-      const flowError = result.errors.find((error) => error.code === 'FLOW_NOT_STARTED')
-      const successText = flowError ? `Pagantes gravados. Processamento pendente: ${flowError.message}` : 'Pagantes gravados. E-mails serão enviados após o processamento.'
+      if (!result.success) {
+        const detail = result.errors.map((error) => error.message).join(' ') || 'O processamento não foi concluído.'
+        throw new Error(`Pagantes gravados, mas a geração foi interrompida. ${detail} Corrija o erro e tente novamente.`)
+      }
       setConfirmOpen(false)
-      setSaved(result.errors.length === 0); setDirty(false)
+      setSaved(true); setDirty(false)
       await refresh(true)
       setNotice(null)
-      setSuccessFeedback(successText)
+      setSuccessFeedback('Pagantes gravados. E-mails serão enviados após o processamento.')
     } catch (error) {
       console.error('[GerarPagantes] Não foi possível gerar os pagantes.', { financeiroId: operation.id, error })
       await logAppError(error, { source: 'React', action: 'save', phase: 'submit-operation', component: 'App', detailId: operation.id, detailType: 'cr40f_financeiro' })
+      setConfirmOpen(false)
+      setMismatchOpen(false)
       setNotice({ tone: 'error', text: errorMessage(error, 'Não foi possível gerar os pagantes.') })
+      window.requestAnimationFrame(() => contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' }))
     } finally { setSaving(false) }
   }
 
@@ -160,7 +165,7 @@ export function App() {
   const actionHint = saved ? 'Geração concluída' : !selectionComplete ? 'Escolha os pagantes e avance' : remaining !== 0 ? 'Rateio divergente: revise os valores' : errors.length ? 'Revise os campos pendentes' : 'Rateio pronto para gerar'
 
   return <PopupShell onBackdropClick={isEmbedded ? () => closeEmbedded(false) : undefined}>
-    <div className="popup-content">
+    <div className="popup-content" ref={contentRef}>
       <OperationHeader displayId={operation.displayId} serviceCount={operation.serviceCount} balanced={remaining === 0} onRefresh={() => void refresh()} onClose={isEmbedded ? () => closeEmbedded(true) : undefined} />
       {notice ? <FeedbackNotice {...notice} /> : null}
       <AllocationSummary totalCents={operation.totalCents} allocatedCents={totalRateado} remainingCents={remaining} />

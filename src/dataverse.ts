@@ -304,7 +304,7 @@ export async function submitOperation(financeiroId: Guid, request: SubmitRequest
       }
     }
 
-    finalResult = { success: true, requestId: request.requestId, financeiroId, totalCents, results, errors }
+    finalResult = { success: errors.length === 0, requestId: request.requestId, financeiroId, totalCents, results, errors }
     await finishGenerationLock(lockId, request, finalResult)
     const operator = currentOperator()
     await logAppOperation({ action: 'gerar-pagantes', detailId: financeiroId, operatorId: operator.id, operatorName: operator.name, financeiroVersion: request.expectedFinanceiroVersion, allocationSummary: { totalCents: request.totalCents, allocatedCents: totalCents, payerCount: request.pagantes.length }, payload: { requestId: request.requestId, results, errors } })
