@@ -187,31 +187,44 @@ export async function loadOperation(recordId: Guid): Promise<OperationData> {
   }
 }
 
-async function beginGenerationLock(financeiroId: Guid, request: SubmitRequest): Promise<Guid> {
-  const api = getXrm()?.WebApi
-  if (!api) return request.requestId
-  const recent = await fetchAll(generationTable, `?$select=cr40f_geracaopagantesoperacaoid,cr40f_requestid,cr40f_sucesso,cr40f_resultado,createdon&$filter=_cr40f_financeiro_value eq ${financeiroId} and cr40f_sucesso eq false&$orderby=createdon desc&$top=1`)
-  const latest = recent[0]
-  if (latest) {
-    const createdAt = Date.parse(text(latest, 'createdon'))
-    const processing = (() => { try { return JSON.parse(text(latest, 'cr40f_resultado')).status === 'Processing' } catch { return false } })()
-    if (processing && (!createdAt || Date.now() - createdAt < activeGenerationWindowMs)) {
-      throw new Error('Já existe outra geração de pagantes em processamento nesta OP.')
-    }
-  }
-  const operator = currentOperator()
-  const created = await api.createRecord(generationTable, {
-    cr40f_requestid: request.requestId,
-    'cr40f_financeiro@odata.bind': `/cr40f_financeiros(${financeiroId})`,
-    cr40f_sucesso: false,
-    cr40f_resultado: JSON.stringify({ status: 'Processing', operatorId: operator.id, operatorName: operator.name, financeiroVersion: request.expectedFinanceiroVersion, allocationSummary: { totalCents: request.totalCents, allocatedCents: request.pagantes.reduce((sum, payer) => sum + payer.amountCents, 0), payerCount: request.pagantes.length } })
-  })
-  return normalizeGuid(created.id)
+function isMissingGenerationTableError(error: unknown): boolean {
+  let serialized: string
+  try { serialized = error instanceof Error ? `${error.message} ${JSON.stringify(error)}` : JSON.stringify(error) }
+  catch { serialized = String(error) }
+  return serialized.includes(generationTable) && /metadata does not exist|n[aã]o [ée] poss[ií]vel localizar a entidade|entidade inv[aá]lida/i.test(serialized)
 }
 
-async function finishGenerationLock(lockId: Guid, request: SubmitRequest, result: SubmitResult): Promise<void> {
+async function beginGenerationLock(financeiroId: Guid, request: SubmitRequest): Promise<Guid | null> {
   const api = getXrm()?.WebApi
-  if (!api) return
+  if (!api) return request.requestId
+  try {
+    const recent = await fetchAll(generationTable, `?$select=cr40f_geracaopagantesoperacaoid,cr40f_requestid,cr40f_sucesso,cr40f_resultado,createdon&$filter=_cr40f_financeiro_value eq ${financeiroId} and cr40f_sucesso eq false&$orderby=createdon desc&$top=1`)
+    const latest = recent[0]
+    if (latest) {
+      const createdAt = Date.parse(text(latest, 'createdon'))
+      const processing = (() => { try { return JSON.parse(text(latest, 'cr40f_resultado')).status === 'Processing' } catch { return false } })()
+      if (processing && (!createdAt || Date.now() - createdAt < activeGenerationWindowMs)) {
+        throw new Error('Já existe outra geração de pagantes em processamento nesta OP.')
+      }
+    }
+    const operator = currentOperator()
+    const created = await api.createRecord(generationTable, {
+      cr40f_requestid: request.requestId,
+      'cr40f_financeiro@odata.bind': `/cr40f_financeiros(${financeiroId})`,
+      cr40f_sucesso: false,
+      cr40f_resultado: JSON.stringify({ status: 'Processing', operatorId: operator.id, operatorName: operator.name, financeiroVersion: request.expectedFinanceiroVersion, allocationSummary: { totalCents: request.totalCents, allocatedCents: request.pagantes.reduce((sum, payer) => sum + payer.amountCents, 0), payerCount: request.pagantes.length } })
+    })
+    return normalizeGuid(created.id)
+  } catch (error) {
+    if (!isMissingGenerationTableError(error)) throw error
+    console.warn(`[GerarPagantes] Tabela opcional ${generationTable} ausente; geração seguirá sem lock.`, error)
+    return null
+  }
+}
+
+async function finishGenerationLock(lockId: Guid | null, request: SubmitRequest, result: SubmitResult): Promise<void> {
+  const api = getXrm()?.WebApi
+  if (!api || !lockId) return
   await api.updateRecord(generationTable, lockId, {
     cr40f_sucesso: result.success,
     cr40f_resultado: JSON.stringify({ status: result.success ? 'Completed' : 'Failed', requestId: request.requestId, results: result.results, errors: result.errors })

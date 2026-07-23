@@ -18,6 +18,11 @@ const appVersion = `v${__APP_VERSION__} ${__APP_DATE__}`
 type Notice = { tone: 'error' | 'success'; text: string } | null
 
 const emailValid = (email: string) => /^\S+@\S+\.\S+$/.test(email.trim())
+const errorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof Error && error.message) return error.message
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string' && error.message) return error.message
+  return fallback
+}
 const makePayer = (person: Person, amountCents = 0): Payer => ({ ...person, amountCents, paymentMethod: 202410000, generateLink: true, sendEmail: emailValid(person.email), linkStatus: 'NotApplicable', emailStatus: 'NotApplicable' })
 
 export function App() {
@@ -56,8 +61,9 @@ export function App() {
       const failedLinks = data.payers.filter((payer) => payer.linkStatus === 'Failed')
       if (failedLinks.length) setNotice({ tone: 'error', text: `${failedLinks.length} link(s) de pagamento não foram gerados. Revise o Pagante e o histórico do Flow.` })
     } catch (error) {
+      console.error('[GerarPagantes] Não foi possível carregar a OP.', error)
       await logAppError(error, { source: 'React', action: 'refresh', phase: 'load-operation', component: 'App' })
-      setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível carregar a OP.' })
+      setNotice({ tone: 'error', text: errorMessage(error, 'Não foi possível carregar a OP.') })
     } finally { setLoading(false) }
   }, [])
 
@@ -134,8 +140,9 @@ export function App() {
       await refresh(true)
       setNotice({ tone: 'success', text: successText })
     } catch (error) {
+      console.error('[GerarPagantes] Não foi possível gerar os pagantes.', { financeiroId: operation.id, error })
       await logAppError(error, { source: 'React', action: 'save', phase: 'submit-operation', component: 'App', detailId: operation.id, detailType: 'cr40f_financeiro' })
-      setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'Não foi possível gerar os pagantes.' })
+      setNotice({ tone: 'error', text: errorMessage(error, 'Não foi possível gerar os pagantes.') })
     } finally { setSaving(false) }
   }
 
