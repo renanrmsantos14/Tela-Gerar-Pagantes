@@ -1,12 +1,10 @@
 import { X } from 'lucide-react'
-import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useId, useRef, type ButtonHTMLAttributes, type MouseEventHandler, type ReactNode } from 'react'
-import { MOTION_EASE } from './motion'
 
 type ButtonProps = { variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; className?: string; children?: ReactNode; disabled?: boolean; onClick?: MouseEventHandler<HTMLButtonElement>; 'aria-label'?: string; 'aria-busy'?: boolean | 'true' | 'false' }
 
 export function Button({ variant = 'secondary', className = '', children, ...props }: ButtonProps) {
-  return <motion.button type="button" className={`ui-button ui-button--${variant} ${className}`.trim()} disabled={props.disabled} aria-label={props['aria-label']} aria-busy={props['aria-busy']} onClick={props.onClick} whileTap={props.disabled ? undefined : { transform: 'scale(.97)' }} transition={{ duration: 0.14, ease: MOTION_EASE }}>{children}</motion.button>
+  return <button type="button" className={`ui-button ui-button--${variant} ${className}`.trim()} disabled={props.disabled} aria-label={props['aria-label']} aria-busy={props['aria-busy']} onClick={props.onClick}>{children}</button>
 }
 
 export function IconButton(props: ButtonHTMLAttributes<HTMLButtonElement>) {
@@ -44,5 +42,5 @@ export function Modal({ open, title, description, onClose, children }: { open: b
     requestAnimationFrame(() => dialogRef.current?.querySelector<HTMLElement>('input[autofocus], input, button')?.focus())
     return () => { document.removeEventListener('keydown', onKeyDown); previous?.focus() }
   }, [open, onClose])
-  return <AnimatePresence>{open ? <motion.div className="modal-layer" role="presentation" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18, ease: MOTION_EASE }} onMouseDown={onClose}><motion.div ref={dialogRef} className="modal-card" role="dialog" aria-modal="true" aria-labelledby={titleId} onMouseDown={(event) => event.stopPropagation()} initial={{ opacity: 0, transform: 'translateY(10px) scale(.96)' }} animate={{ opacity: 1, transform: 'translateY(0) scale(1)' }} exit={{ opacity: 0, transform: 'translateY(8px) scale(.985)' }} transition={{ duration: 0.22, ease: MOTION_EASE }}><div className="modal-card__header"><div><h2 id={titleId}>{title}</h2>{description ? <p>{description}</p> : null}</div><IconButton aria-label="Fechar" onClick={onClose}><X size={18} /></IconButton></div>{children}</motion.div></motion.div> : null}</AnimatePresence>
+  return open ? <div className="modal-layer" role="presentation" onMouseDown={onClose}><div ref={dialogRef} className="modal-card" role="dialog" aria-modal="true" aria-labelledby={titleId} onMouseDown={(event) => event.stopPropagation()}><div className="modal-card__header"><div><h2 id={titleId}>{title}</h2>{description ? <p>{description}</p> : null}</div><IconButton aria-label="Fechar" onClick={onClose}><X size={18} /></IconButton></div>{children}</div></div> : null
 }

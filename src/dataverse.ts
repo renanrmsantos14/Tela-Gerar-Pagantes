@@ -86,7 +86,7 @@ export async function loadOperation(recordId: Guid): Promise<OperationData> {
   const xrm = getXrm()
   if (!xrm?.WebApi) return demoOperation
   const api = xrm.WebApi
-  const finance = await api.retrieveRecord('cr40f_financeiro', recordId, '?$select=cr40f_id,versionnumber')
+  const finance = await api.retrieveRecord('cr40f_financeiro', recordId, '?$select=cr40f_idfinanceiro,versionnumber')
   const services = await fetchAll('cr40f_reservadeveculos', `?$select=cr40f_reservadeveculosid,_cr40f_solicitante_value&$filter=_cr40f_financeiro_value eq ${recordId}`)
   const serviceIds = services.map((service) => text(service, 'cr40f_reservadeveculosid')).filter(Boolean)
   if (!serviceIds.length) throw new Error('Esta OP não possui serviços vinculados.')
@@ -109,7 +109,7 @@ export async function loadOperation(recordId: Guid): Promise<OperationData> {
   const payers = existingRows.map((row) => toPayer(row, personMap)).filter((payer): payer is Payer => Boolean(payer))
   return {
     id: recordId,
-    displayId: text(finance, 'cr40f_id') || recordId,
+    displayId: text(finance, 'cr40f_idfinanceiro') || recordId,
     version: text(finance, 'versionnumber'),
     serviceCount: services.length,
     totalCents,

@@ -25,7 +25,7 @@ var Cr40fGerarPagantes = (function () {
     }
   }
 
-  // O backdrop e um pseudo-elemento atras do iframe. Assim, nunca compoe blur sobre a tela de rateio.
+  // Backdrop e webresource sao irmaos: blur nunca compoe sobre a tela da aplicacao.
   function openNativeOverlay(recordId) {
     var hostWindow = window.top;
     var hostDocument = hostWindow.document;
@@ -38,20 +38,24 @@ var Cr40fGerarPagantes = (function () {
     style.id = OVERLAY_STYLE_ID;
     style.textContent =
       '#' + OVERLAY_ID + '{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;isolation:isolate;opacity:0;transition:opacity 180ms cubic-bezier(.23,1,.32,1)}' +
-      '#' + OVERLAY_ID + '::before{position:absolute;inset:0;z-index:0;content:"";background:rgba(0,26,61,.32);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}' +
       '#' + OVERLAY_ID + '.is-visible{opacity:1}' +
-      '#' + OVERLAY_ID + ' iframe{position:relative;z-index:1;width:min(100vw,900px);height:min(100dvh,900px);border:0;background:transparent;box-shadow:none;outline:0}';
+      '#' + OVERLAY_ID + ' .bt-gerar-pagantes-backdrop{position:absolute;inset:0;z-index:0;background:rgba(0,26,61,.32);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}' +
+      '#' + OVERLAY_ID + ' iframe{position:relative;z-index:1;display:block;width:100%;height:100%;border:0;background:#fff;box-shadow:none;outline:0}';
 
     var overlay = hostDocument.createElement('div');
     overlay.id = OVERLAY_ID;
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-label', 'Gerar pagantes');
+    var backdrop = hostDocument.createElement('div');
+    backdrop.className = 'bt-gerar-pagantes-backdrop';
+    backdrop.setAttribute('aria-hidden', 'true');
     var frame = hostDocument.createElement('iframe');
     frame.title = 'Gerar pagantes';
     frame.setAttribute('allow', 'clipboard-write');
     var clientUrl = Xrm.Utility.getGlobalContext().getClientUrl().replace(/\/$/, '');
     frame.src = clientUrl + '/WebResources/Tela_GerarPagantes/index.html?recordId=' + encodeURIComponent(recordId) + '&embedded=1';
+    overlay.appendChild(backdrop);
     overlay.appendChild(frame);
     (hostDocument.head || hostDocument.documentElement).appendChild(style);
     hostDocument.body.appendChild(overlay);
@@ -79,6 +83,7 @@ var Cr40fGerarPagantes = (function () {
         close(false);
       }
     }
+    backdrop.addEventListener('mousedown', function () { close(false); });
     hostWindow.addEventListener('message', onMessage);
     hostWindow.addEventListener('keydown', onKeyDown, true);
     frame.addEventListener('load', function () { frame.focus(); }, { once: true });
@@ -94,13 +99,7 @@ var Cr40fGerarPagantes = (function () {
       var recordId = String(selected).replace(/[{}]/g, '').trim();
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recordId)) { await alert('OP invalida', 'Nao foi possivel identificar o registro selecionado.'); return; }
 
-      try {
-        openNativeOverlay(recordId);
-      } catch (overlayError) {
-        console.warn('[Cr40fGerarPagantes] Overlay nativo indisponivel; usando dialogo oficial.', overlayError);
-        var result = await Xrm.Navigation.navigateTo({ pageType: 'webresource', webresourceName: 'Tela_GerarPagantes/index.html', data: JSON.stringify({ recordId: recordId }) }, { target: 2, width: { value: 820, unit: 'px' }, height: { value: 860, unit: 'px' }, position: 1 });
-        if (result && result.saved) refreshHost();
-      }
+      openNativeOverlay(recordId);
     } catch (error) {
       console.error('[Cr40fGerarPagantes] Falha ao abrir web resource', error);
       await alert('Nao foi possivel abrir a cobranca', 'Tente novamente. Se o problema continuar, informe o horario desta tentativa ao suporte.');
