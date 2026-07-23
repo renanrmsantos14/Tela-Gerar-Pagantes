@@ -68,6 +68,7 @@ function toPayer(row: Record<string, unknown>, people: Map<Guid, Person>): Payer
   const personId = lookup(row, '_cr40f_bancodedados_value')
   const person = personId ? people.get(personId) : undefined
   if (!person) return null
+  const emailStatusValue = text(row, 'cr40f_statusenvioemail')
   return {
     ...person,
     existingPayerId: text(row, 'cr40f_pagantesid'),
@@ -75,10 +76,24 @@ function toPayer(row: Record<string, unknown>, people: Map<Guid, Person>): Payer
     amountCents: Math.round(Number(row.cr40f_valor ?? 0) * 100),
     paymentMethod: Number(row.cr40f_formadepagamento ?? 202410000) as Payer['paymentMethod'],
     generateLink: Boolean(text(row, 'cr40f_linkdepagamento')),
-    sendEmail: text(row, 'cr40f_statusenvioemail') !== '202410000',
+    sendEmail: emailStatusValue ? emailStatusValue !== '202410000' : false,
     paymentUrl: text(row, 'cr40f_linkdepagamento') || undefined,
     linkStatus: (text(row, 'cr40f_statusgeracaolink@OData.Community.Display.V1.FormattedValue') || 'NotApplicable') as Payer['linkStatus'],
     emailStatus: (text(row, 'cr40f_statusenvioemail@OData.Community.Display.V1.FormattedValue') || 'NotApplicable') as Payer['emailStatus']
+  }
+}
+
+async function fetchExistingPayers(recordId: Guid): Promise<Array<Record<string, unknown>>> {
+  const baseSelect = 'cr40f_pagantesid,_cr40f_bancodedados_value,cr40f_valor,cr40f_formadepagamento,cr40f_status,cr40f_linkdepagamento'
+  const statusSelect = `${baseSelect},cr40f_statusgeracaolink,cr40f_statusenvioemail`
+  const filter = `$filter=_cr40f_financeiro_value eq ${recordId}`
+  try {
+    return await fetchAll('cr40f_pagantes', `?$select=${statusSelect}&${filter}`)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (!message.includes('cr40f_statusgeracaolink') && !message.includes('cr40f_statusenvioemail')) throw error
+    console.warn('[GerarPagantes] Campos de status nao encontrados em cr40f_pagantes. Carregando sem status de link/e-mail.', error)
+    return fetchAll('cr40f_pagantes', `?$select=${baseSelect}&${filter}`)
   }
 }
 
@@ -95,7 +110,7 @@ export async function loadOperation(recordId: Guid): Promise<OperationData> {
   const [compositions, servicePassengers, existingRows, directoryRows] = await Promise.all([
     fetchAll('cr40f_composicaodeprecos', `?$select=new_valortotal&$filter=${serviceFilter}`),
     fetchAll('cr40f_servicosporpassageiro', `?$select=_cr40f_bancodedados_value&$filter=${passengerFilter}`),
-    fetchAll('cr40f_pagantes', `?$select=cr40f_pagantesid,_cr40f_bancodedados_value,cr40f_valor,cr40f_formadepagamento,cr40f_status,cr40f_linkdepagamento,cr40f_statusgeracaolink,cr40f_statusenvioemail&$filter=_cr40f_financeiro_value eq ${recordId}`),
+    fetchExistingPayers(recordId),
     fetchAll('cr40f_bancodedados', '?$select=cr40f_bancodedadosid,cr40f_nomedopassageiro,cr40f_email,cr40f_telefone&$orderby=cr40f_nomedopassageiro asc')
   ])
   const totalCents = Math.round(compositions.reduce((sum, row) => sum + Number(row.new_valortotal ?? 0), 0) * 100)

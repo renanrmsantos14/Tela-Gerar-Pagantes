@@ -83,6 +83,7 @@ var Cr40fGerarPagantes = (function () {
         close(false);
       }
     }
+    backdrop.addEventListener('mousedown', function () { close(false); });
     hostWindow.addEventListener('message', onMessage);
     hostWindow.addEventListener('keydown', onKeyDown, true);
     frame.addEventListener('load', function () { frame.focus(); }, { once: true });
