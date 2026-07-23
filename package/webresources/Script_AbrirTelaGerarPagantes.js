@@ -25,7 +25,7 @@ var Cr40fGerarPagantes = (function () {
     }
   }
 
-  // Backdrop e webresource sao irmaos: blur nunca compoe sobre a tela da aplicacao.
+  // Backdrop e webresource sao irmaos: iframe transparente deixa o blur revelar o app.
   function openNativeOverlay(recordId) {
     var hostWindow = window.top;
     var hostDocument = hostWindow.document;
@@ -39,8 +39,8 @@ var Cr40fGerarPagantes = (function () {
     style.textContent =
       '#' + OVERLAY_ID + '{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;isolation:isolate;opacity:0;transition:opacity 180ms cubic-bezier(.23,1,.32,1)}' +
       '#' + OVERLAY_ID + '.is-visible{opacity:1}' +
-      '#' + OVERLAY_ID + ' .bt-gerar-pagantes-backdrop{position:absolute;inset:0;z-index:0;background:rgba(0,26,61,.32);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}' +
-      '#' + OVERLAY_ID + ' iframe{position:relative;z-index:1;display:block;width:100%;height:100%;border:0;background:#fff;box-shadow:none;outline:0}';
+      '#' + OVERLAY_ID + ' .bt-gerar-pagantes-backdrop{position:absolute;inset:0;z-index:0;background:rgba(0,26,61,.22);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}' +
+      '#' + OVERLAY_ID + ' iframe{position:relative;z-index:1;display:block;width:100%;height:100%;border:0;background:transparent;box-shadow:none;outline:0}';
 
     var overlay = hostDocument.createElement('div');
     overlay.id = OVERLAY_ID;
@@ -52,6 +52,7 @@ var Cr40fGerarPagantes = (function () {
     backdrop.setAttribute('aria-hidden', 'true');
     var frame = hostDocument.createElement('iframe');
     frame.title = 'Gerar pagantes';
+    frame.setAttribute('allowtransparency', 'true');
     frame.setAttribute('allow', 'clipboard-write');
     var clientUrl = Xrm.Utility.getGlobalContext().getClientUrl().replace(/\/$/, '');
     frame.src = clientUrl + '/WebResources/Tela_GerarPagantes/index.html?recordId=' + encodeURIComponent(recordId) + '&embedded=1';

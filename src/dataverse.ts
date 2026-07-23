@@ -85,16 +85,8 @@ function toPayer(row: Record<string, unknown>, people: Map<Guid, Person>): Payer
 
 async function fetchExistingPayers(recordId: Guid): Promise<Array<Record<string, unknown>>> {
   const baseSelect = 'cr40f_pagantesid,_cr40f_bancodedados_value,cr40f_valor,cr40f_formadepagamento,cr40f_status,cr40f_linkdepagamento'
-  const statusSelect = `${baseSelect},cr40f_statusgeracaolink,cr40f_statusenvioemail`
   const filter = `$filter=_cr40f_financeiro_value eq ${recordId}`
-  try {
-    return await fetchAll('cr40f_pagantes', `?$select=${statusSelect}&${filter}`)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    if (!message.includes('cr40f_statusgeracaolink') && !message.includes('cr40f_statusenvioemail')) throw error
-    console.warn('[GerarPagantes] Campos de status nao encontrados em cr40f_pagantes. Carregando sem status de link/e-mail.', error)
-    return fetchAll('cr40f_pagantes', `?$select=${baseSelect}&${filter}`)
-  }
+  return fetchAll('cr40f_pagantes', `?$select=${baseSelect}&${filter}`)
 }
 
 export async function loadOperation(recordId: Guid): Promise<OperationData> {
