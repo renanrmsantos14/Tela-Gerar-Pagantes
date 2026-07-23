@@ -89,7 +89,7 @@ var Cr40fGerarPagantes = (function () {
       '#' + OVERLAY_ID + '{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;isolation:isolate;opacity:0;transition:opacity 180ms cubic-bezier(.23,1,.32,1)}' +
       '#' + OVERLAY_ID + '.is-visible{opacity:1}' +
       '#' + OVERLAY_ID + ' .bt-gerar-pagantes-backdrop{position:absolute;inset:0;z-index:0;background:rgba(0,26,61,.22);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}' +
-      '#' + OVERLAY_ID + ' iframe{position:relative;z-index:1;display:block;width:min(1180px,calc(100% - 48px));height:min(900px,calc(100% - 40px));border:0;border-radius:14px;background:transparent;box-shadow:0 18px 54px rgba(0,14,35,.22);outline:0}' +
+      '#' + OVERLAY_ID + ' iframe{position:relative;z-index:1;display:block;width:min(1180px,calc(100% - 48px));height:min(900px,calc(100% - 40px));border:0;border-radius:14px;background:transparent;box-shadow:none;outline:0}' +
       '@media(max-width:820px){#' + OVERLAY_ID + ' iframe{width:100%;height:100%;border-radius:0;box-shadow:none}}';
 
     var overlay = hostDocument.createElement('div');
