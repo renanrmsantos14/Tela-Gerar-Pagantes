@@ -44,6 +44,11 @@ $arguments = @(
 
 Write-Step 'enviando assembly, garantindo o step da Custom API e publicando'
 & $dotnet.Source run --project $registrarProject --configuration Release -- @arguments
-if ($LASTEXITCODE -ne 0) { throw "Falha ao registrar plugin no ambiente $EnvironmentName. Codigo: $LASTEXITCODE" }
+if ($LASTEXITCODE -ne 0) {
+  Write-Step 'registrador SDK indisponivel; atualizando assembly existente pela Web API'
+  $fallbackScript = Join-Path $PSScriptRoot 'publish-plugin-webapi.ps1'
+  & powershell -NoProfile -ExecutionPolicy Bypass -File $fallbackScript -EnvironmentUrl $EnvironmentUrl -DllPath $dllPath
+  if ($LASTEXITCODE -ne 0) { throw "Falha ao publicar plugin no ambiente $EnvironmentName. Codigo: $LASTEXITCODE" }
+}
 
 Write-Step 'concluido'
