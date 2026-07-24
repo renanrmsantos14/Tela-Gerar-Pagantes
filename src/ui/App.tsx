@@ -95,6 +95,7 @@ export function App() {
   const selectedIds = useMemo(() => new Set(payers.map((payer) => payer.id)), [payers])
   const involvedPeople = useMemo(() => (operation?.people ?? []).filter((person) => `${person.name} ${person.email} ${person.role}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))), [operation, query])
   const deliveryPayers = useMemo(() => payers.filter((payer) => payer.generateLink && payer.sendEmail), [payers])
+  const needsRecipientConfirmation = deliveryPayers.length > 0
   const selectionErrors = useMemo(() => payers.length ? [] : ['Selecione pelo menos um pagante.'], [payers.length])
   const reviewErrors = useMemo(() => {
     const messages: string[] = []
@@ -105,7 +106,7 @@ export function App() {
     return messages
   }, [payers, remaining, invalidAmountIds, mismatchAccepted])
   const recipientErrors = useMemo(() => deliveryPayers.some((payer) => !recipientValid(payer)) ? ['Escolha um destinatário cadastrado com nome e e-mail válidos para cada envio.'] : [], [deliveryPayers])
-  const allStepsComplete = selectionComplete && reviewComplete && recipientsConfirmed
+  const allStepsComplete = selectionComplete && reviewComplete && (!needsRecipientConfirmation || recipientsConfirmed)
   const visibleSelectionErrors = validationStep === 1 ? (selectionErrors.length ? selectionErrors : [validationPrompt]) : []
   const visibleReviewErrors = validationStep === 2 ? (reviewErrors.length ? reviewErrors : [validationPrompt]) : []
   const visibleRecipientErrors = validationStep === 3 ? (recipientErrors.length ? recipientErrors : [validationPrompt]) : []
@@ -180,8 +181,8 @@ export function App() {
     if (fieldErrors.length) { showStepValidation(2); return }
     if (remaining !== 0 && !acceptMismatch) { setValidationStep(2); setMismatchOpen(true); return }
     setMismatchAccepted(remaining !== 0)
-    setReviewComplete(true); setRecipientsConfirmed(false); setValidationStep(null); setValidationPrompt('')
-    focusStep(3)
+    setReviewComplete(true); setRecipientsConfirmed(!needsRecipientConfirmation); setValidationStep(null); setValidationPrompt('')
+    if (needsRecipientConfirmation) focusStep(3)
   }
 
   function editRecipients() {
@@ -199,7 +200,7 @@ export function App() {
     if (!operation || saving) return
     if (!selectionComplete) { showStepValidation(1, 'Conclua a seleção de pagantes para continuar.'); return }
     if (!reviewComplete) { showStepValidation(2, 'Confirme a revisão para abrir os destinatários.'); return }
-    if (!recipientsConfirmed) { showStepValidation(3, 'Conclua os destinatários para liberar a geração.'); return }
+    if (needsRecipientConfirmation && !recipientsConfirmed) { showStepValidation(3, 'Conclua os destinatários para liberar a geração.'); return }
     if (reviewErrors.length) { setReviewComplete(false); setRecipientsConfirmed(false); showStepValidation(2); return }
     if (recipientErrors.length) { setRecipientsConfirmed(false); showStepValidation(3); return }
     if (operation.payers.length > 0 && !replaceExisting) { setExistingPayersOpen(true); return }
@@ -239,7 +240,7 @@ export function App() {
   if (loading) return <div className="state-screen"><div className="skeleton skeleton--title" /><div className="skeleton skeleton--panel" /><small>{appVersion}</small></div>
   if (!operation) return <div className="state-screen"><strong>Não foi possível abrir esta OP.</strong>{notice ? <FeedbackNotice {...notice} /> : null}<button className="ui-button ui-button--secondary" onClick={() => void refresh()}>Tentar novamente</button><small>{appVersion}</small></div>
 
-  const actionHint = saved ? 'Geração concluída' : !selectionComplete ? 'Etapa 1 de 3 · Selecione os pagantes' : !reviewComplete ? 'Etapa 2 de 3 · Revise a cobrança' : !recipientsConfirmed ? 'Etapa 3 de 3 · Confirme os destinatários' : '3 etapas concluídas · Pronto para gerar'
+  const actionHint = saved ? 'Geração concluída' : !selectionComplete ? 'Etapa 1 de 2 · Selecione os pagantes' : !reviewComplete ? 'Etapa 2 de 2 · Revise a cobrança' : needsRecipientConfirmation && !recipientsConfirmed ? 'Etapa 3 de 3 · Confirme os destinatários' : needsRecipientConfirmation ? '3 etapas concluídas · Pronto para gerar' : '2 etapas concluídas · Pronto para gerar'
 
   return <PopupShell onBackdropClick={isEmbedded ? () => closeEmbedded(false) : undefined}>
     <div className="popup-content" ref={contentRef}>
@@ -247,8 +248,8 @@ export function App() {
       {notice ? <FeedbackNotice {...notice} /> : null}
       <AllocationSummary totalCents={operation.totalCents} allocatedCents={totalRateado} remainingCents={remaining} />
       <PeopleSelector people={involvedPeople} selectedIds={selectedIds} query={query} collapsed={selectionComplete} errors={visibleSelectionErrors} onQueryChange={setQuery} onToggle={togglePerson} onAddExternal={() => setExternalOpen(true)} onSplit={() => rebalance(payers)} onContinue={completeSelection} onEdit={editSelection} />
-      {selectionComplete ? <PayerList payers={payers} collapsed={reviewComplete} errors={visibleReviewErrors} onChange={updatePayer} onEdit={editReview} onContinue={() => completeReview()} invalidAmountIds={invalidAmountIds} warnings={warnings} onAmountValidityChange={updateAmountValidity} onEditSelection={editSelection} /> : null}
-      {selectionComplete && reviewComplete ? <RecipientConfirmation payers={payers} people={operation.people} collapsed={recipientsConfirmed} errors={visibleRecipientErrors} onChange={updateRecipient} onEdit={editRecipients} onContinue={completeRecipients} onSearchDirectory={searchDirectoryPeople} /> : null}
+      {selectionComplete ? <PayerList payers={payers} collapsed={reviewComplete} errors={visibleReviewErrors} onChange={updatePayer} onEdit={editReview} onContinue={() => completeReview()} invalidAmountIds={invalidAmountIds} warnings={warnings} onAmountValidityChange={updateAmountValidity} onEditSelection={editSelection} requiresRecipientConfirmation={needsRecipientConfirmation} /> : null}
+      {selectionComplete && reviewComplete && needsRecipientConfirmation ? <RecipientConfirmation payers={payers} people={operation.people} collapsed={recipientsConfirmed} errors={visibleRecipientErrors} onChange={updateRecipient} onEdit={editRecipients} onContinue={completeRecipients} onSearchDirectory={searchDirectoryPeople} /> : null}
     </div>
     <StickyActionBar version={appVersion} hint={actionHint} ready={allStepsComplete} saving={saving} completed={saved} onSave={() => void save()} />
     {successFeedback ? <SuccessFeedback text={successFeedback} /> : null}

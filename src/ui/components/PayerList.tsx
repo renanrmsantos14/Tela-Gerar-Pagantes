@@ -15,7 +15,8 @@ export function PayerList({
   onContinue,
   invalidAmountIds,
   warnings,
-  onAmountValidityChange
+  onAmountValidityChange,
+  requiresRecipientConfirmation
 }: {
   payers: Payer[]
   collapsed: boolean
@@ -27,6 +28,7 @@ export function PayerList({
   invalidAmountIds: Set<string>
   warnings: Map<string, string>
   onAmountValidityChange: (id: string, invalid: boolean) => void
+  requiresRecipientConfirmation: boolean
 }) {
   const total = payers.reduce((sum, payer) => sum + payer.amountCents, 0)
   if (collapsed) {
@@ -43,7 +45,7 @@ export function PayerList({
     </div>
     <StepValidation id="step-review-errors" errors={errors} />
     <div className="step-actions">
-      <Button variant="primary" aria-disabled={errors.length > 0} aria-describedby={errors.length ? 'step-review-errors' : undefined} onClick={onContinue}>Confirmar destinatários<ChevronRight size={17} /></Button>
+      <Button variant="primary" aria-disabled={errors.length > 0} aria-describedby={errors.length ? 'step-review-errors' : undefined} onClick={onContinue}>{requiresRecipientConfirmation ? 'Confirmar destinatários' : 'Continuar'}<ChevronRight size={17} /></Button>
     </div>
   </section>
 }
