@@ -1,88 +1,132 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Newtonsoft.Json;
+using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Query;
 
 namespace Cr40f.GerarPagantes.Plugin;
 
 public sealed class PluginSettings
 {
-    public string CieloClientId { get; set; } = string.Empty;
-    public string CieloClientSecret { get; set; } = string.Empty;
-    public string GraphTenantId { get; set; } = string.Empty;
-    public string GraphClientId { get; set; } = string.Empty;
-    public string GraphClientSecret { get; set; } = string.Empty;
-    public string SenderEmail { get; set; } = string.Empty;
-    public string ReplyToEmail { get; set; } = string.Empty;
-    public List<string> InternalRecipients { get; set; } = new();
-    public string EmailAssetPrefix { get; set; } = "cr40f_/GerarPagantes/email/";
+    public const string CieloClientIdVariable = "cr40f_GerarPagantesCieloClientId";
+    public const string CieloClientSecretVariable = "cr40f_GerarPagantesCieloClientSecret";
+    public const string GraphTenantIdVariable = "cr40f_GerarPagantesGraphTenantId";
+    public const string GraphClientIdVariable = "cr40f_GerarPagantesGraphClientId";
+    public const string GraphClientSecretVariable = "cr40f_GerarPagantesGraphClientSecret";
+    public const string SenderEmailVariable = "cr40f_GerarPagantesSenderEmail";
+    public const string ReplyToEmailVariable = "cr40f_GerarPagantesReplyToEmail";
+    public const string InternalRecipientsVariable = "cr40f_GerarPagantesInternalRecipients";
+    public const string EmailAssetPrefixVariable = "cr40f_GerarPagantesEmailAssetPrefix";
 
-    public static PluginSettings Parse(string unsecureConfiguration, string secureConfiguration)
+    public string CieloClientId { get; private set; } = string.Empty;
+    public string CieloClientSecret { get; private set; } = string.Empty;
+    public string GraphTenantId { get; private set; } = string.Empty;
+    public string GraphClientId { get; private set; } = string.Empty;
+    public string GraphClientSecret { get; private set; } = string.Empty;
+    public string SenderEmail { get; private set; } = string.Empty;
+    public string ReplyToEmail { get; private set; } = string.Empty;
+    public List<string> InternalRecipients { get; private set; } = new();
+    public string EmailAssetPrefix { get; private set; } = "cr40f_/GerarPagantes/email/";
+
+    public static PluginSettings Load(IOrganizationService service, bool requiresCielo, bool requiresGraph)
     {
-        var publicSettings = Deserialize<PublicSettings>(unsecureConfiguration);
-        var secretSettings = Deserialize<SecretSettings>(secureConfiguration);
+        var values = LoadTextValues(service, new[]
+        {
+            CieloClientIdVariable,
+            GraphTenantIdVariable,
+            GraphClientIdVariable,
+            SenderEmailVariable,
+            ReplyToEmailVariable,
+            InternalRecipientsVariable,
+            EmailAssetPrefixVariable
+        });
 
         return new PluginSettings
         {
-            CieloClientId = publicSettings?.CieloClientId?.Trim() ?? LegacyValue(unsecureConfiguration),
-            CieloClientSecret = secretSettings?.CieloClientSecret?.Trim() ?? LegacyValue(secureConfiguration),
-            GraphTenantId = publicSettings?.GraphTenantId?.Trim() ?? string.Empty,
-            GraphClientId = publicSettings?.GraphClientId?.Trim() ?? string.Empty,
-            GraphClientSecret = secretSettings?.GraphClientSecret?.Trim() ?? string.Empty,
-            SenderEmail = publicSettings?.SenderEmail?.Trim() ?? string.Empty,
-            ReplyToEmail = publicSettings?.ReplyToEmail?.Trim() ?? string.Empty,
-            InternalRecipients = publicSettings?.InternalRecipients?
-                .Where(IsEmail)
+            CieloClientId = Get(values, CieloClientIdVariable),
+            CieloClientSecret = requiresCielo ? LoadSecret(service, CieloClientSecretVariable) : string.Empty,
+            GraphTenantId = Get(values, GraphTenantIdVariable),
+            GraphClientId = Get(values, GraphClientIdVariable),
+            GraphClientSecret = requiresGraph ? LoadSecret(service, GraphClientSecretVariable) : string.Empty,
+            SenderEmail = Get(values, SenderEmailVariable),
+            ReplyToEmail = Get(values, ReplyToEmailVariable),
+            InternalRecipients = Get(values, InternalRecipientsVariable)
+                .Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(value => value.Trim())
+                .Where(IsEmail)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList() ?? new List<string>(),
-            EmailAssetPrefix = string.IsNullOrWhiteSpace(publicSettings?.EmailAssetPrefix)
+                .ToList(),
+            EmailAssetPrefix = string.IsNullOrWhiteSpace(Get(values, EmailAssetPrefixVariable))
                 ? "cr40f_/GerarPagantes/email/"
-                : publicSettings!.EmailAssetPrefix!.Trim()
+                : Get(values, EmailAssetPrefixVariable)
         };
     }
 
-    public void ValidateFor(GerarPagantesRequest request)
+    public void ValidateFor(GerarPagantesRequest request, bool requiresCielo)
     {
-        if (request.Pagantes.Any(payer => payer.GenerateLink) &&
+        if (requiresCielo &&
             (string.IsNullOrWhiteSpace(CieloClientId) || string.IsNullOrWhiteSpace(CieloClientSecret)))
-            throw new InvalidOperationException("Configuração Cielo ausente no step da Custom API.");
+            throw new InvalidOperationException("Configuração Cielo ausente nas variáveis de ambiente da solução.");
 
         if (!request.Pagantes.Any(payer => payer.SendEmail)) return;
         if (new[] { GraphTenantId, GraphClientId, GraphClientSecret, SenderEmail }.Any(string.IsNullOrWhiteSpace))
-            throw new InvalidOperationException("Configuração Microsoft Graph incompleta no step da Custom API.");
+            throw new InvalidOperationException("Configuração Microsoft Graph incompleta nas variáveis de ambiente da solução.");
         if (!IsEmail(SenderEmail) || !string.IsNullOrWhiteSpace(ReplyToEmail) && !IsEmail(ReplyToEmail))
-            throw new InvalidOperationException("Configuração de remetente ou Reply-To inválida.");
+            throw new InvalidOperationException("Configuração de remetente ou Reply-To inválida nas variáveis de ambiente da solução.");
     }
 
-    private static T? Deserialize<T>(string value) where T : class
+    private static Dictionary<string, string> LoadTextValues(IOrganizationService service, IReadOnlyCollection<string> schemaNames)
     {
-        if (string.IsNullOrWhiteSpace(value) || !value.TrimStart().StartsWith("{", StringComparison.Ordinal)) return null;
-        try { return JsonConvert.DeserializeObject<T>(value); }
-        catch (JsonException error) { throw new InvalidOperationException("Configuração JSON inválida no step da Custom API.", error); }
+        var definitionQuery = new QueryExpression("environmentvariabledefinition")
+        {
+            ColumnSet = new ColumnSet("schemaname", "defaultvalue")
+        };
+        definitionQuery.Criteria.AddCondition("schemaname", ConditionOperator.In, schemaNames.Cast<object>().ToArray());
+        var definitions = service.RetrieveMultiple(definitionQuery).Entities;
+        var valuesByDefinition = new Dictionary<Guid, string>();
+
+        if (definitions.Count > 0)
+        {
+            var valueQuery = new QueryExpression("environmentvariablevalue")
+            {
+                ColumnSet = new ColumnSet("environmentvariabledefinitionid", "value")
+            };
+            valueQuery.Criteria.AddCondition("environmentvariabledefinitionid", ConditionOperator.In, definitions.Select(definition => (object)definition.Id).ToArray());
+            foreach (var value in service.RetrieveMultiple(valueQuery).Entities)
+            {
+                var definition = value.GetAttributeValue<EntityReference>("environmentvariabledefinitionid");
+                if (definition != null && !valuesByDefinition.ContainsKey(definition.Id))
+                    valuesByDefinition[definition.Id] = value.GetAttributeValue<string>("value")?.Trim() ?? string.Empty;
+            }
+        }
+
+        return definitions.ToDictionary(
+            definition => definition.GetAttributeValue<string>("schemaname") ?? string.Empty,
+            definition => valuesByDefinition.TryGetValue(definition.Id, out var value)
+                ? value
+                : definition.GetAttributeValue<string>("defaultvalue")?.Trim() ?? string.Empty,
+            StringComparer.OrdinalIgnoreCase);
     }
 
-    private static string LegacyValue(string value) => string.IsNullOrWhiteSpace(value) || value.TrimStart().StartsWith("{", StringComparison.Ordinal)
-        ? string.Empty
-        : value.Trim();
+    private static string LoadSecret(IOrganizationService service, string schemaName)
+    {
+        try
+        {
+            var response = service.Execute(new OrganizationRequest("RetrieveEnvironmentVariableSecretValue")
+            {
+                ["EnvironmentVariableName"] = schemaName
+            });
+            return response.Results.TryGetValue("SecretValue", out var value) ? value as string ?? string.Empty : string.Empty;
+        }
+        catch (Exception error)
+        {
+            throw new InvalidOperationException($"Não foi possível recuperar a variável secreta '{schemaName}'.", error);
+        }
+    }
+
+    private static string Get(IReadOnlyDictionary<string, string> values, string schemaName) =>
+        values.TryGetValue(schemaName, out var value) ? value.Trim() : string.Empty;
 
     private static bool IsEmail(string? value) => !string.IsNullOrWhiteSpace(value) &&
         System.Text.RegularExpressions.Regex.IsMatch(value!.Trim(), @"^\S+@\S+\.\S+$");
-
-    private sealed class PublicSettings
-    {
-        public string? CieloClientId { get; set; }
-        public string? GraphTenantId { get; set; }
-        public string? GraphClientId { get; set; }
-        public string? SenderEmail { get; set; }
-        public string? ReplyToEmail { get; set; }
-        public List<string>? InternalRecipients { get; set; }
-        public string? EmailAssetPrefix { get; set; }
-    }
-
-    private sealed class SecretSettings
-    {
-        public string? CieloClientSecret { get; set; }
-        public string? GraphClientSecret { get; set; }
-    }
 }

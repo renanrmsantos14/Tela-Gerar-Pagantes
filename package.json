@@ -8,9 +8,10 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
-    "push": "node scripts/bump-version.mjs && npm run package && npm run push:plugin:dev && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-webresources.ps1 -EnvironmentUrl https://org23b93544.crm2.dynamics.com",
+    "push": "node scripts/bump-version.mjs && npm run solution:sync:dev",
     "push:plugin:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/push-plugin.ps1 -EnvironmentUrl https://org23b93544.crm2.dynamics.com -EnvironmentName dev",
-    "push:plugin:prod": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/push-plugin.ps1 -EnvironmentUrl https://orgf261ae8e.crm2.dynamics.com -EnvironmentName prod",
+    "solution:sync:dev": "npm run package && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-solution-dev.ps1",
+    "solution:export:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/export-solution.ps1",
     "package": "npm run build && node scripts/package-webresource.mjs",
     "check": "npm run lint && npm run test && npm run build"
   },

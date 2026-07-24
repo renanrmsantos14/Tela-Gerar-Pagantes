@@ -22,14 +22,9 @@ public sealed class GerarPagantesPlugin : IPlugin
     private const int Completed = 202410002;
     private const int Failed = 202410003;
     private static readonly HashSet<int> PaymentMethods = new() { 202410000, 202410001, 202410002 };
-    private readonly PluginSettings _settings;
+    public GerarPagantesPlugin() { }
 
-    public GerarPagantesPlugin() : this(string.Empty, string.Empty) { }
-
-    public GerarPagantesPlugin(string unsecureConfiguration, string secureConfiguration)
-    {
-        _settings = PluginSettings.Parse(unsecureConfiguration ?? string.Empty, secureConfiguration ?? string.Empty);
-    }
+    public GerarPagantesPlugin(string unsecureConfiguration, string secureConfiguration) { }
 
     public void Execute(IServiceProvider serviceProvider)
     {
@@ -47,7 +42,6 @@ public sealed class GerarPagantesPlugin : IPlugin
             response.FinanceiroId = target.Id;
             if (request.RequestId == Guid.Empty) throw new InvalidPluginExecutionException("requestId é obrigatório.");
             if (IsProcessed(service, request.RequestId)) throw new InvalidPluginExecutionException("Esta solicitação já foi processada.");
-            _settings.ValidateFor(request);
             var finance = service.Retrieve(Financeiro, target.Id, new ColumnSet("versionnumber", "statecode", "statuscode", "ownerid"));
             ValidateOperationAccess(service, context, finance);
             ValidateVersion(finance, request.ExpectedFinanceiroVersion);
@@ -58,10 +52,12 @@ public sealed class GerarPagantesPlugin : IPlugin
             ValidateExistingPayload(request, existing);
             var needsCielo = request.Pagantes.Any(payer => payer.GenerateLink) ||
                 existing.Values.Any(row => !string.IsNullOrWhiteSpace(row.GetAttributeValue<string>("cr40f_cielolinkid")));
-            var cielo = needsCielo ? new CieloClient(_settings.CieloClientId, _settings.CieloClientSecret) : null;
-            var graph = request.Pagantes.Any(payer => payer.SendEmail) ? new GraphEmailClient(_settings) : null;
+            var settings = PluginSettings.Load(service, needsCielo, request.Pagantes.Any(payer => payer.SendEmail));
+            settings.ValidateFor(request, needsCielo);
+            var cielo = needsCielo ? new CieloClient(settings.CieloClientId, settings.CieloClientSecret) : null;
+            var graph = request.Pagantes.Any(payer => payer.SendEmail) ? new GraphEmailClient(settings) : null;
             var renderer = graph != null ? new PaymentEmailRenderer() : null;
-            var emailAssets = graph != null ? new EmailAssetProvider(service, _settings.EmailAssetPrefix).Load() : null;
+            var emailAssets = graph != null ? new EmailAssetProvider(service, settings.EmailAssetPrefix).Load() : null;
             var createdLinks = new List<string>();
             try
             {

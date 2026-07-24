@@ -1,5 +1,10 @@
 # Gerar Pagantes
 
+> ALM: `npm run push` sincroniza os componentes somente no DEV. Teste e producao
+> recebem a mesma solucao pelo Pipeline Power Platform; nao use
+> `push:plugin:prod`. A configuracao por ambiente esta em variaveis de ambiente
+> da solucao e os segredos usam o tipo Secret.
+
 Web resource React e plugin Dataverse para rateio, criação de link Cielo e envio
 do e-mail de cobrança de uma OP.
 
@@ -24,23 +29,13 @@ componentes na solução `appbetinhos`.
 # Web resources Tela_GerarPagantes/* , Tela_Script_GerarPagantes.js e Script_AbrirTelaGerarPagantes.js no ambiente dev.
 npm run push
 
-# Assembly, tipo e step MainOperation da Custom API, com publicacao no ambiente escolhido.
-npm run push:plugin:dev
-npm run push:plugin:prod
+# Exporta o artefato managed do DEV quando for necessario entrega-lo fora do Pipeline nativo.
+npm run solution:export:dev
 ```
 
-Antes da primeira publicação do plugin em cada ambiente, defina:
-
-```powershell
-$env:CIELO_CLIENT_ID = '<client-id>'
-$env:CIELO_CLIENT_SECRET = '<segredo>'
-$env:GRAPH_TENANT_ID = '<tenant-id>'
-$env:GRAPH_CLIENT_ID = '<app-registration-id>'
-$env:GRAPH_CLIENT_SECRET = '<segredo>'
-$env:GERAR_PAGANTES_SENDER_EMAIL = 'financeiro@betinhos.com.br'
-$env:GERAR_PAGANTES_REPLY_TO_EMAIL = 'financeiro@betinhos.com.br' # opcional
-$env:GERAR_PAGANTES_INTERNAL_RECIPIENTS = 'operacional@betinhos.com.br;financeiro@betinhos.com.br' # opcional
-```
+Os valores sao configurados nas variaveis de ambiente da solucao durante a
+promocao pelo Pipeline. Os secrets Cielo e Graph usam o tipo Secret e nunca
+entram no terminal, no codigo ou no ZIP.
 
 O App Registration do Graph precisa da permissão de aplicativo `Mail.Send`, com
 consentimento de administrador, e permissão para enviar pela mailbox configurada.

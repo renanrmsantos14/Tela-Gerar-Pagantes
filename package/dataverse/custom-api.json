@@ -16,7 +16,7 @@
     "typeName": "Cr40f.GerarPagantes.Plugin.GerarPagantesPlugin",
     "stage": "MainOperation",
     "mode": "Synchronous",
-    "unsecureConfiguration": "<CIELO_CLIENT_ID>",
-    "secureConfiguration": "<CIELO_CLIENT_SECRET>"
+    "unsecureConfiguration": "",
+    "secureConfiguration": ""
   }
 }

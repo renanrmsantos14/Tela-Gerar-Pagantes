@@ -9,16 +9,6 @@ var environmentUrl = options.Require("environmentUrl");
 var dllPath = options.Require("dllPath");
 var solutionUniqueName = options.Require("solutionUniqueName");
 var publish = options.Has("publish");
-var unsecureConfiguration = options.Optional("unsecureConfiguration") ??
-    Environment.GetEnvironmentVariable("GERAR_PAGANTES_PLUGIN_PUBLIC_CONFIG");
-var secureConfiguration = options.Optional("secureConfiguration") ??
-    Environment.GetEnvironmentVariable("GERAR_PAGANTES_PLUGIN_SECURE_CONFIG");
-
-if ((unsecureConfiguration is null) != (secureConfiguration is null))
-{
-    throw new InvalidOperationException("As configuracoes publica e segura do plugin devem ser informadas juntas.");
-}
-
 if (!File.Exists(dllPath))
 {
     throw new FileNotFoundException("DLL do plugin nao encontrada.", dllPath);
@@ -43,7 +33,7 @@ var assemblyContent = Convert.ToBase64String(File.ReadAllBytes(dllPath));
 var assemblyId = UpsertAssembly(service, assemblyInfo, assemblyContent);
 var pluginTypeId = UpsertPluginType(service, assemblyId);
 var customApiId = EnsureCustomApi(service, pluginTypeId, solutionUniqueName, CustomApiMessageName, BoundEntity);
-var stepId = ConfigureMainOperationStep(service, customApiId, pluginTypeId, unsecureConfiguration, secureConfiguration);
+var stepId = ConfigureMainOperationStep(service, customApiId, pluginTypeId);
 EnsureSolutionComponent(service, assemblyId, solutionUniqueName, PluginAssemblyComponentType);
 EnsureSolutionComponent(service, stepId, solutionUniqueName, SdkMessageProcessingStepComponentType);
 
@@ -163,16 +153,14 @@ static Guid EnsureCustomApi(ServiceClient service, Guid pluginTypeId, string sol
 static Guid ConfigureMainOperationStep(
     ServiceClient service,
     Guid customApiId,
-    Guid pluginTypeId,
-    string? unsecureConfiguration,
-    string? secureConfiguration)
+    Guid pluginTypeId)
 {
     var customApi = service.Retrieve("customapi", customApiId, new ColumnSet("sdkmessageid"));
     var sdkMessage = customApi.GetAttributeValue<EntityReference>("sdkmessageid")
         ?? throw new InvalidOperationException("A Custom API não possui mensagem SDK publicada.");
     var rows = service.RetrieveMultiple(new QueryExpression("sdkmessageprocessingstep")
     {
-        ColumnSet = new ColumnSet("configuration", "sdkmessageprocessingstepsecureconfigid", "name"),
+        ColumnSet = new ColumnSet("name"),
         TopCount = 2,
         Criteria = new FilterExpression(LogicalOperator.And)
         {
@@ -186,39 +174,6 @@ static Guid ConfigureMainOperationStep(
     }).Entities;
     if (rows.Count != 1) throw new InvalidOperationException($"Step MainOperation da Custom API não encontrado de forma única. Quantidade: {rows.Count}.");
     var step = rows.Single();
-
-    if (unsecureConfiguration is not null)
-    {
-        Log("atualizando configuração pública do step");
-        service.Update(new Entity("sdkmessageprocessingstep", step.Id) { ["configuration"] = unsecureConfiguration });
-    }
-
-    if (secureConfiguration is not null)
-    {
-        var secureReference = step.GetAttributeValue<EntityReference>("sdkmessageprocessingstepsecureconfigid");
-        Guid secureConfigId;
-        if (secureReference is null)
-        {
-            Log("criando configuração segura do step");
-            secureConfigId = service.Create(new Entity("sdkmessageprocessingstepsecureconfig")
-            {
-                ["secureconfig"] = secureConfiguration
-            });
-            service.Update(new Entity("sdkmessageprocessingstep", step.Id)
-            {
-                ["sdkmessageprocessingstepsecureconfigid"] = Ref("sdkmessageprocessingstepsecureconfig", secureConfigId)
-            });
-        }
-        else
-        {
-            Log("atualizando configuração segura do step");
-            secureConfigId = secureReference.Id;
-            service.Update(new Entity("sdkmessageprocessingstepsecureconfig", secureConfigId)
-            {
-                ["secureconfig"] = secureConfiguration
-            });
-        }
-    }
 
     return step.Id;
 }

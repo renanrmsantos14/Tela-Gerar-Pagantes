@@ -200,15 +200,14 @@ Client ID, client secret, tokens e URLs específicas não devem ser gravados em:
 - solução exportada;
 - web resource.
 
-Neste projeto, o registrador grava IDs, remetente, Reply-To, destinatários
-internos e prefixo dos assets na configuração não segura do step. Os segredos
-Cielo e Graph são gravados em `sdkmessageprocessingstepsecureconfig`.
+Neste projeto, IDs, remetente, Reply-To, destinatários internos e prefixo dos
+assets são variáveis de ambiente da solução. Os segredos Cielo e Graph usam
+variáveis do tipo Secret e são recuperados pelo plugin em runtime.
 
 O App Registration do Microsoft Graph exige `Mail.Send` Application, consentimento
 de administrador e acesso à mailbox remetente. Restrinja o aplicativo à mailbox
-necessária por política do Exchange. O Pipeline deve executar a configuração
-pós-importação em cada ambiente; a solução transporta a estrutura, não os
-segredos.
+necessária por política do Exchange. O Pipeline informa os valores do ambiente
+destino; a solução transporta as definições, não os segredos.
 
 ## Validação após o deploy
 
@@ -221,7 +220,7 @@ Request: cr40f_RequestJson
 Response: cr40f_ResponseJson
 Assembly: Cr40f.GerarPagantes.Plugin
 Plugin type: Cr40f.GerarPagantes.Plugin.GerarPagantesPlugin
-Secure config: Cielo e Graph presentes
+Variáveis de ambiente: Cielo e Graph presentes
 Email assets: cr40f_/GerarPagantes/email/*
 ```
 

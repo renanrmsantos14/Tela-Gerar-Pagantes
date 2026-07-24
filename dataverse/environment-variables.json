@@ -1,0 +1,15 @@
+{
+  "solution": "appbetinhos",
+  "runtime": "Cr40f.GerarPagantes.Plugin",
+  "variables": [
+    { "schemaName": "cr40f_GerarPagantesCieloClientId", "type": "String", "requiredFor": "Cielo" },
+    { "schemaName": "cr40f_GerarPagantesCieloClientSecret", "type": "Secret", "requiredFor": "Cielo" },
+    { "schemaName": "cr40f_GerarPagantesGraphTenantId", "type": "String", "requiredFor": "e-mail" },
+    { "schemaName": "cr40f_GerarPagantesGraphClientId", "type": "String", "requiredFor": "e-mail" },
+    { "schemaName": "cr40f_GerarPagantesGraphClientSecret", "type": "Secret", "requiredFor": "e-mail" },
+    { "schemaName": "cr40f_GerarPagantesSenderEmail", "type": "String", "requiredFor": "e-mail" },
+    { "schemaName": "cr40f_GerarPagantesReplyToEmail", "type": "String", "requiredFor": "e-mail", "optional": true },
+    { "schemaName": "cr40f_GerarPagantesInternalRecipients", "type": "String", "requiredFor": "e-mail", "optional": true },
+    { "schemaName": "cr40f_GerarPagantesEmailAssetPrefix", "type": "String", "defaultValue": "cr40f_/GerarPagantes/email/" }
+  ]
+}

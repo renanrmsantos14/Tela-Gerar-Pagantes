@@ -103,6 +103,32 @@ function Ensure-Attribute($definition, $headers) {
   Write-Host "[gerar-pagantes:metadata] pronto: $($current.LogicalName)"
 }
 
+function Ensure-EnvironmentVariable($definition, $headers) {
+  $escapedName = $definition.SchemaName.Replace("'", "''")
+  $lookupUrl = "$api/environmentvariabledefinitions?`$select=environmentvariabledefinitionid,schemaname,type&`$filter=schemaname eq '$escapedName'"
+  $current = Invoke-Dataverse 'Get' $lookupUrl $headers
+  if (@($current.value).Count -eq 0) {
+    $payload = @{
+      schemaname = $definition.SchemaName
+      displayname = $definition.DisplayName
+      description = $definition.Description
+      type = $definition.Type
+    }
+    if ($definition.Type -eq 100000005) { $payload.secretstore = 1 }
+    if ($null -ne $definition.DefaultValue) { $payload.defaultvalue = $definition.DefaultValue }
+    Invoke-Dataverse 'Post' "$api/environmentvariabledefinitions" $headers $payload | Out-Null
+    $current = Invoke-Dataverse 'Get' $lookupUrl $headers
+  }
+
+  if (@($current.value).Count -ne 1) { throw "Falha ao localizar variável de ambiente: $($definition.SchemaName)" }
+  if ([int]$current.value[0].type -ne [int]$definition.Type) {
+    throw "A variável $($definition.SchemaName) existe com tipo incompatível. Esperado: $($definition.Type)."
+  }
+
+  Add-SolutionComponent $current.value[0].environmentvariabledefinitionid 380 $headers
+  Write-Host "[gerar-pagantes:metadata] variável pronta: $($definition.SchemaName)"
+}
+
 $headers = Get-DataverseHeaders
 $solution = Invoke-Dataverse 'Get' "$api/solutions?`$select=solutionid&`$filter=uniquename eq '$SolutionUniqueName'" $headers
 if (@($solution.value).Count -ne 1) { throw "Solucao nao encontrada ou duplicada: $SolutionUniqueName" }
@@ -125,6 +151,19 @@ $attributes = @(
 )
 
 foreach ($attribute in $attributes) { Ensure-Attribute $attribute $headers }
+
+$environmentVariables = @(
+  @{ SchemaName = 'cr40f_GerarPagantesCieloClientId'; DisplayName = 'Gerar Pagantes - Cielo Client ID'; Description = 'Client ID Cielo do ambiente.'; Type = 100000000; DefaultValue = $null },
+  @{ SchemaName = 'cr40f_GerarPagantesCieloClientSecret'; DisplayName = 'Gerar Pagantes - Cielo Client Secret'; Description = 'Segredo Cielo do ambiente.'; Type = 100000005; DefaultValue = $null },
+  @{ SchemaName = 'cr40f_GerarPagantesGraphTenantId'; DisplayName = 'Gerar Pagantes - Graph Tenant ID'; Description = 'Tenant ID do Microsoft Entra para envio de e-mail.'; Type = 100000000; DefaultValue = $null },
+  @{ SchemaName = 'cr40f_GerarPagantesGraphClientId'; DisplayName = 'Gerar Pagantes - Graph Client ID'; Description = 'Client ID do app Microsoft Graph do ambiente.'; Type = 100000000; DefaultValue = $null },
+  @{ SchemaName = 'cr40f_GerarPagantesGraphClientSecret'; DisplayName = 'Gerar Pagantes - Graph Client Secret'; Description = 'Segredo do app Microsoft Graph do ambiente.'; Type = 100000005; DefaultValue = $null },
+  @{ SchemaName = 'cr40f_GerarPagantesSenderEmail'; DisplayName = 'Gerar Pagantes - Remetente'; Description = 'Mailbox remetente dos e-mails de cobrança.'; Type = 100000000; DefaultValue = $null },
+  @{ SchemaName = 'cr40f_GerarPagantesReplyToEmail'; DisplayName = 'Gerar Pagantes - Reply-To'; Description = 'Reply-To opcional dos e-mails de cobrança.'; Type = 100000000; DefaultValue = $null },
+  @{ SchemaName = 'cr40f_GerarPagantesInternalRecipients'; DisplayName = 'Gerar Pagantes - Cópias internas'; Description = 'E-mails separados por ponto e vírgula que recebem cópia interna.'; Type = 100000000; DefaultValue = $null },
+  @{ SchemaName = 'cr40f_GerarPagantesEmailAssetPrefix'; DisplayName = 'Gerar Pagantes - Prefixo de assets'; Description = 'Prefixo dos web resources inline do e-mail.'; Type = 100000000; DefaultValue = 'cr40f_/GerarPagantes/email/' }
+)
+foreach ($environmentVariable in $environmentVariables) { Ensure-EnvironmentVariable $environmentVariable $headers }
 
 $emailAssets = @(
   @{ FileName = 'cabecalho.png'; Type = 5 },

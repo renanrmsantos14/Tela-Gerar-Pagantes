@@ -11,8 +11,8 @@
      `cr40f_financeiro`, `cr40f_sucesso`, `cr40f_resultado`;
    - `cr40f_cielolinkcleanup`: `cr40f_name`, `cr40f_cielolinkid`,
      `cr40f_ultimoerro`.
-6. Configure o step MainOperation com os IDs públicos e os segredos Cielo/Graph
-   usando `scripts/push-plugin.ps1`.
+6. Provisione as variáveis de ambiente definidas em
+   `environment-variables.json`; os valores são preenchidos no Pipeline de cada ambiente.
 7. Publique `dist/` como `Tela_GerarPagantes/` e os scripts de abertura.
 8. Vincule o botão a `Cr40fGerarPagantes.abrirPainelRateio` com
    `SelectedControlSelectedItemIds`.
@@ -20,7 +20,7 @@
 
 O App Registration usado pelo plugin exige `Mail.Send` Application no Microsoft
 Graph, consentimento de administrador e acesso à mailbox remetente. Segredos
-ficam apenas na configuração segura do step; nunca em Flow, JavaScript, solução
-exportada, web resource ou configuração não segura.
+ficam em variáveis de ambiente do tipo Secret; nunca em Flow, JavaScript,
+solução exportada, web resource ou configuração do step.
 
 O app não lê `new_FlowURLGerarPagantesHttp` e não grava pagantes diretamente.
