@@ -365,3 +365,20 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   .popup-content { padding: 16px 14px; }
   .sticky-action-bar { padding: 10px 14px max(10px, env(safe-area-inset-bottom)); border-radius: 0; }
 }
+
+.step-panel { scroll-margin-top: 14px; outline: 0; }
+.step-panel--active { opacity: 1; transform: translateY(0); transition: opacity 180ms var(--bt-ease-out), transform 180ms var(--bt-ease-out), border-color 150ms var(--bt-ease-out); }
+.step-panel--complete { transition: border-color 150ms var(--bt-ease-out), background-color 150ms var(--bt-ease-out); }
+.step-panel:focus-visible { border-color: var(--bt-focus); box-shadow: 0 0 0 3px rgba(33,89,210,.11); }
+.compact-step__actions .ui-badge { gap: 5px; }
+.step-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+.step-actions .ui-button { min-width: 190px; }
+.step-validation { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; margin-top: 10px; padding: 9px 10px; border: 1px solid #f2c2cc; border-radius: 8px; background: var(--bt-danger-soft); color: #9f2940; font-size: 12px; }
+.step-validation > svg { margin-top: 1px; }
+.step-validation strong { color: #9f2940; font-size: 12px; }
+.step-validation ul { margin: 2px 0 0; padding-left: 17px; }
+.recipient-empty { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 10px 12px; border: 1px solid var(--bt-line); border-radius: 8px; background: var(--bt-neutral); color: var(--bt-slate); font-size: 12px; }
+.ui-button[aria-disabled="true"]:not(:disabled) { opacity: .55; cursor: not-allowed; box-shadow: none; }
+@media (hover: hover) and (pointer: fine) { .ui-button[aria-disabled="true"]:not(:disabled):hover { border-color: var(--bt-line); background: var(--bt-neutral); color: var(--bt-control); transform: none; }.ui-button--primary[aria-disabled="true"]:not(:disabled):hover { border-color: var(--bt-navy); background: var(--bt-navy); color: #fff; } }
+@starting-style { .step-panel--active { opacity: 0; transform: translateY(6px); } }
+@media (max-width: 560px) { .step-actions .ui-button { width: 100%; min-width: 0; min-height: 44px; }.step-validation { padding: 10px; }.compact-step__actions .ui-badge { display: none; } }

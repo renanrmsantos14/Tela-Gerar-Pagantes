@@ -1,10 +1,10 @@
 import { X } from 'lucide-react'
 import { useEffect, useId, useRef, type ButtonHTMLAttributes, type MouseEventHandler, type ReactNode } from 'react'
 
-type ButtonProps = { variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; className?: string; children?: ReactNode; disabled?: boolean; onClick?: MouseEventHandler<HTMLButtonElement>; 'aria-label'?: string; 'aria-busy'?: boolean | 'true' | 'false'; 'aria-expanded'?: boolean | 'true' | 'false' }
+type ButtonProps = { variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; className?: string; children?: ReactNode; disabled?: boolean; onClick?: MouseEventHandler<HTMLButtonElement>; 'aria-label'?: string; 'aria-busy'?: boolean | 'true' | 'false'; 'aria-expanded'?: boolean | 'true' | 'false'; 'aria-disabled'?: boolean | 'true' | 'false'; 'aria-describedby'?: string }
 
 export function Button({ variant = 'secondary', className = '', children, ...props }: ButtonProps) {
-  return <button type="button" className={`ui-button ui-button--${variant} ${className}`.trim()} disabled={props.disabled} aria-label={props['aria-label']} aria-busy={props['aria-busy']} aria-expanded={props['aria-expanded']} onClick={props.onClick}>{children}</button>
+  return <button type="button" className={`ui-button ui-button--${variant} ${className}`.trim()} disabled={props.disabled} aria-label={props['aria-label']} aria-busy={props['aria-busy']} aria-expanded={props['aria-expanded']} aria-disabled={props['aria-disabled']} aria-describedby={props['aria-describedby']} onClick={props.onClick}>{children}</button>
 }
 
 export function IconButton(props: ButtonHTMLAttributes<HTMLButtonElement>) {

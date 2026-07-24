@@ -27,6 +27,7 @@ export function ExternalPayerDialog({
   const requestId = useRef(0)
 
   useEffect(() => {
+    const currentRequest = ++requestId.current
     if (!open || query.trim().length < 2) {
       setResults([])
       setNextLink(undefined)
@@ -34,7 +35,8 @@ export function ExternalPayerDialog({
       setLoading(false)
       return
     }
-    const currentRequest = ++requestId.current
+    setResults([])
+    setNextLink(undefined)
     const timer = window.setTimeout(async () => {
       setLoading(true)
       setError('')
@@ -54,15 +56,18 @@ export function ExternalPayerDialog({
 
   async function loadMore() {
     if (!nextLink || loading) return
+    const currentRequest = ++requestId.current
     setLoading(true)
+    setError('')
     try {
       const page = await onSearch(query, nextLink)
+      if (currentRequest !== requestId.current) return
       setResults((current) => [...current, ...page.people.filter((person) => !current.some((item) => item.id === person.id))])
       setNextLink(page.nextLink)
     } catch {
-      setError('Não foi possível carregar mais resultados.')
+      if (currentRequest === requestId.current) setError('Não foi possível carregar mais resultados.')
     } finally {
-      setLoading(false)
+      if (currentRequest === requestId.current) setLoading(false)
     }
   }
 

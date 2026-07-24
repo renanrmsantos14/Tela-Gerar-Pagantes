@@ -22,6 +22,8 @@ const appVersion = `v${__APP_VERSION__} ${__APP_DATE__}`
 type Notice = { tone: 'error' | 'success'; text: string } | null
 
 const emailValid = (email: string) => /^\S+@\S+\.\S+$/.test(email.trim())
+const guidValid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+const recipientValid = (payer: Payer) => guidValid(payer.recipientId ?? payer.id) && Boolean((payer.recipientName ?? payer.name).trim()) && emailValid(payer.recipientEmail ?? payer.email)
 const errorMessage = (error: unknown, fallback: string): string => {
   if (error instanceof Error && error.message) return error.message
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string' && error.message) return error.message
@@ -42,9 +44,12 @@ export function App() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<Notice>(null)
-  const [attemptedSave, setAttemptedSave] = useState(false)
   const [selectionComplete, setSelectionComplete] = useState(false)
+  const [reviewComplete, setReviewComplete] = useState(false)
   const [recipientsConfirmed, setRecipientsConfirmed] = useState(false)
+  const [mismatchAccepted, setMismatchAccepted] = useState(false)
+  const [validationStep, setValidationStep] = useState<1 | 2 | 3 | null>(null)
+  const [validationPrompt, setValidationPrompt] = useState('')
   const [invalidAmountIds, setInvalidAmountIds] = useState<Set<string>>(new Set())
   const [dirty, setDirty] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -67,7 +72,7 @@ export function App() {
       const id = getRecordIdFromLocation()
       if (!id && window.Xrm?.WebApi) throw new Error('Nenhuma OP foi recebida pela tela.')
       const data = await loadOperation(id ?? '00000000-0000-0000-0000-000000000001')
-      setOperation(data); setPayers(data.payers.map((payer) => ({ ...payer, recipientId: payer.recipientId ?? payer.id, recipientName: payer.recipientName ?? payer.name, recipientEmail: payer.recipientEmail ?? payer.email }))); setSelectionComplete(data.payers.length > 0); setRecipientsConfirmed(false); setInvalidAmountIds(new Set()); setDirty(false)
+      setOperation(data); setPayers(data.payers.map((payer) => ({ ...payer, recipientId: payer.recipientId ?? payer.id, recipientName: payer.recipientName ?? payer.name, recipientEmail: payer.recipientEmail ?? payer.email }))); setSelectionComplete(data.payers.length > 0); setReviewComplete(false); setRecipientsConfirmed(false); setMismatchAccepted(false); setValidationStep(null); setValidationPrompt(''); setInvalidAmountIds(new Set()); setDirty(false)
       const failedLinks = data.payers.filter((payer) => payer.linkStatus === 'Failed')
       if (failedLinks.length) setNotice({ tone: 'error', text: `${failedLinks.length} link(s) de pagamento não foram gerados. Revise o Pagante e o histórico do Flow.` })
     } catch (error) {
@@ -90,17 +95,20 @@ export function App() {
   const selectedIds = useMemo(() => new Set(payers.map((payer) => payer.id)), [payers])
   const involvedPeople = useMemo(() => (operation?.people ?? []).filter((person) => `${person.name} ${person.email} ${person.role}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))), [operation, query])
   const deliveryPayers = useMemo(() => payers.filter((payer) => payer.generateLink && payer.sendEmail), [payers])
-  const errors = useMemo(() => {
-    if (!operation) return []
+  const selectionErrors = useMemo(() => payers.length ? [] : ['Selecione pelo menos um pagante.'], [payers.length])
+  const reviewErrors = useMemo(() => {
     const messages: string[] = []
-    if (!payers.length) messages.push('Selecione pelo menos um pagante.')
-    if (payers.some((payer) => payer.amountCents <= 0)) messages.push('Todo pagante deve possuir valor maior que zero.')
-    if (remaining > 0) messages.push(`Falta ratear ${formatCurrency(remaining)} para fechar o total da OP.`)
-    if (remaining < 0) messages.push(`O rateio excede o total da OP em ${formatCurrency(Math.abs(remaining))}.`)
-    if (recipientsConfirmed && deliveryPayers.some((payer) => !emailValid(payer.recipientEmail ?? payer.email))) messages.push('Selecione uma pessoa com e-mail válido para receber o link de pagamento.')
+    if (payers.some((payer) => payer.amountCents <= 0)) messages.push('Informe um valor maior que zero para cada pagante.')
     if (invalidAmountIds.size) messages.push('Corrija os valores com mais de duas casas decimais.')
+    if (!mismatchAccepted && remaining > 0) messages.push(`Falta ratear ${formatCurrency(remaining)} para fechar o total da OP.`)
+    if (!mismatchAccepted && remaining < 0) messages.push(`O rateio excede o total da OP em ${formatCurrency(Math.abs(remaining))}.`)
     return messages
-  }, [operation, payers, remaining, invalidAmountIds, deliveryPayers, recipientsConfirmed])
+  }, [payers, remaining, invalidAmountIds, mismatchAccepted])
+  const recipientErrors = useMemo(() => deliveryPayers.some((payer) => !recipientValid(payer)) ? ['Escolha um destinatário cadastrado com nome e e-mail válidos para cada envio.'] : [], [deliveryPayers])
+  const allStepsComplete = selectionComplete && reviewComplete && recipientsConfirmed
+  const visibleSelectionErrors = validationStep === 1 ? (selectionErrors.length ? selectionErrors : [validationPrompt]) : []
+  const visibleReviewErrors = validationStep === 2 ? (reviewErrors.length ? reviewErrors : [validationPrompt]) : []
+  const visibleRecipientErrors = validationStep === 3 ? (recipientErrors.length ? recipientErrors : [validationPrompt]) : []
 
   const warnings = useMemo(() => {
     const result = new Map<string, string>()
@@ -110,37 +118,90 @@ export function App() {
     return result
   }, [payers, totalRateado])
 
+  const focusStep = useCallback((step: 1 | 2 | 3) => {
+    const id = step === 1 ? 'step-payers' : step === 2 ? 'step-review' : 'step-recipients'
+    window.requestAnimationFrame(() => {
+      const target = document.getElementById(id)
+      target?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+      target?.focus({ preventScroll: true })
+    })
+  }, [])
+
+  function showStepValidation(step: 1 | 2 | 3, prompt = '') {
+    setValidationStep(step)
+    setValidationPrompt(prompt)
+    focusStep(step)
+  }
+
   const rebalance = useCallback((next: Payer[]) => {
     if (!operation) return
     const shares = splitEvenly(operation.totalCents, next.map((payer) => payer.id))
+    setSaved(false); setDirty(true); setReviewComplete(false); setRecipientsConfirmed(false); setMismatchAccepted(false); setValidationStep(null); setValidationPrompt('')
     setPayers(next.map((payer) => ({ ...payer, amountCents: shares.get(payer.id) ?? 0 })))
   }, [operation])
 
   function togglePerson(person: Person) {
     const next = payers.some((payer) => payer.id === person.id) ? payers.filter((payer) => payer.id !== person.id) : [...payers, makePayer(person)]
-    setSaved(false); setDirty(true); setRecipientsConfirmed(false); rebalance(next)
+    rebalance(next)
   }
 
   function addExternal(person: Person) {
     if (selectedIds.has(person.id)) return
-    setSaved(false); setDirty(true); setRecipientsConfirmed(false); rebalance([...payers, makePayer({ ...person, role: 'Adicionado' })]); setExternalOpen(false); setExternalQuery('')
+    rebalance([...payers, makePayer({ ...person, role: 'Adicionado' })]); setExternalOpen(false); setExternalQuery('')
   }
 
-  function updatePayer(id: string, change: Partial<Payer>) { setSaved(false); setDirty(true); setRecipientsConfirmed(false); setPayers((current) => current.map((payer) => payer.id === id ? { ...payer, ...change } : payer)) }
+  function updatePayer(id: string, change: Partial<Payer>) { setSaved(false); setDirty(true); setReviewComplete(false); setRecipientsConfirmed(false); setMismatchAccepted(false); setValidationStep(null); setPayers((current) => current.map((payer) => payer.id === id ? { ...payer, ...change } : payer)) }
 
-  function updateRecipient(payerId: string, person: Person) { setSaved(false); setDirty(true); setPayers((current) => current.map((payer) => payer.id === payerId ? { ...payer, recipientId: person.id, recipientName: person.name, recipientEmail: person.email } : payer)) }
+  function updateRecipient(payerId: string, person: Person) { setSaved(false); setDirty(true); setRecipientsConfirmed(false); setValidationStep(null); setPayers((current) => current.map((payer) => payer.id === payerId ? { ...payer, recipientId: person.id, recipientName: person.name, recipientEmail: person.email } : payer)) }
 
   function updateAmountValidity(id: string, invalid: boolean) {
+    setReviewComplete(false); setRecipientsConfirmed(false); setMismatchAccepted(false)
     setInvalidAmountIds((current) => { const next = new Set(current); if (invalid) next.add(id); else next.delete(id); return next })
   }
 
-  async function save(allowTotalMismatch = false) {
-    setAttemptedSave(true)
+  function editSelection() {
+    setSelectionComplete(false); setReviewComplete(false); setRecipientsConfirmed(false); setMismatchAccepted(false); setValidationStep(null); setValidationPrompt('')
+    focusStep(1)
+  }
+
+  function completeSelection() {
+    if (selectionErrors.length) { showStepValidation(1); return }
+    setSelectionComplete(true); setReviewComplete(false); setRecipientsConfirmed(false); setValidationStep(null); setValidationPrompt('')
+    focusStep(2)
+  }
+
+  function editReview() {
+    setReviewComplete(false); setRecipientsConfirmed(false); setValidationStep(null); setValidationPrompt('')
+    focusStep(2)
+  }
+
+  function completeReview(acceptMismatch = mismatchAccepted) {
+    const fieldErrors = reviewErrors.filter((error) => !error.startsWith('Falta ratear') && !error.startsWith('O rateio excede'))
+    if (fieldErrors.length) { showStepValidation(2); return }
+    if (remaining !== 0 && !acceptMismatch) { setValidationStep(2); setMismatchOpen(true); return }
+    setMismatchAccepted(remaining !== 0)
+    setReviewComplete(true); setRecipientsConfirmed(false); setValidationStep(null); setValidationPrompt('')
+    focusStep(3)
+  }
+
+  function editRecipients() {
+    setRecipientsConfirmed(false); setValidationStep(null); setValidationPrompt('')
+    focusStep(3)
+  }
+
+  function completeRecipients() {
+    if (recipientErrors.length) { showStepValidation(3); return }
+    setRecipientsConfirmed(true); setValidationStep(null); setValidationPrompt('')
+    focusStep(3)
+  }
+
+  async function save() {
     if (!operation || saving) return
-    if (remaining !== 0 && !allowTotalMismatch) { setMismatchOpen(true); return }
-    const hasBlockingError = !payers.length || invalidAmountIds.size > 0 || payers.some((payer) => payer.amountCents <= 0) || recipientsConfirmed && deliveryPayers.some((payer) => !emailValid(payer.recipientEmail ?? payer.email))
-    if (hasBlockingError) return
-    if (deliveryPayers.length && !recipientsConfirmed) { setRecipientsConfirmed(true); return }
+    if (!selectionComplete) { showStepValidation(1, 'Conclua a seleção de pagantes para continuar.'); return }
+    if (!reviewComplete) { showStepValidation(2, 'Confirme a revisão para abrir os destinatários.'); return }
+    if (!recipientsConfirmed) { showStepValidation(3, 'Conclua os destinatários para liberar a geração.'); return }
+    if (reviewErrors.length) { setReviewComplete(false); setRecipientsConfirmed(false); showStepValidation(2); return }
+    if (recipientErrors.length) { setRecipientsConfirmed(false); showStepValidation(3); return }
     if (operation.payers.length > 0 && !replaceExisting) { setExistingPayersOpen(true); return }
     const risky = payers.some((payer) => payer.existingPayerId && payer.paymentStatus && payer.paymentStatus !== 'Pendente')
     if (risky) { setConfirmOpen(true); return }
@@ -178,24 +239,23 @@ export function App() {
   if (loading) return <div className="state-screen"><div className="skeleton skeleton--title" /><div className="skeleton skeleton--panel" /><small>{appVersion}</small></div>
   if (!operation) return <div className="state-screen"><strong>Não foi possível abrir esta OP.</strong>{notice ? <FeedbackNotice {...notice} /> : null}<button className="ui-button ui-button--secondary" onClick={() => void refresh()}>Tentar novamente</button><small>{appVersion}</small></div>
 
-  const actionHint = saved ? 'Geração concluída' : !selectionComplete ? 'Escolha os pagantes e avance' : remaining !== 0 ? 'Rateio divergente: revise os valores' : errors.length ? 'Revise os campos pendentes' : !recipientsConfirmed && deliveryPayers.length ? 'Confirme quem receberá cada link' : 'Rateio pronto para gerar'
+  const actionHint = saved ? 'Geração concluída' : !selectionComplete ? 'Etapa 1 de 3 · Selecione os pagantes' : !reviewComplete ? 'Etapa 2 de 3 · Revise a cobrança' : !recipientsConfirmed ? 'Etapa 3 de 3 · Confirme os destinatários' : '3 etapas concluídas · Pronto para gerar'
 
   return <PopupShell onBackdropClick={isEmbedded ? () => closeEmbedded(false) : undefined}>
     <div className="popup-content" ref={contentRef}>
       <OperationHeader displayId={operation.displayId} serviceCount={operation.serviceCount} balanced={remaining === 0} onRefresh={() => void refresh()} onClose={isEmbedded ? () => closeEmbedded(true) : undefined} />
       {notice ? <FeedbackNotice {...notice} /> : null}
       <AllocationSummary totalCents={operation.totalCents} allocatedCents={totalRateado} remainingCents={remaining} />
-      <PeopleSelector people={involvedPeople} selectedIds={selectedIds} query={query} collapsed={selectionComplete} onQueryChange={setQuery} onToggle={togglePerson} onAddExternal={() => setExternalOpen(true)} onSplit={() => rebalance(payers)} onContinue={() => setSelectionComplete(true)} onEdit={() => setSelectionComplete(false)} />
-      {selectionComplete && !recipientsConfirmed ? <PayerList payers={payers} onChange={updatePayer} invalidAmountIds={invalidAmountIds} warnings={warnings} onAmountValidityChange={updateAmountValidity} onEditSelection={() => { setSaved(false); setDirty(true); setRecipientsConfirmed(false); setSelectionComplete(false) }} /> : null}
-      {selectionComplete && recipientsConfirmed ? <RecipientConfirmation payers={payers} people={operation.people} onChange={updateRecipient} onBack={() => setRecipientsConfirmed(false)} onSearchDirectory={searchDirectoryPeople} /> : null}
-      {attemptedSave && errors.length ? <div className="validation-panel" role="alert"><strong>Revise antes de continuar</strong><ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul></div> : null}
+      <PeopleSelector people={involvedPeople} selectedIds={selectedIds} query={query} collapsed={selectionComplete} errors={visibleSelectionErrors} onQueryChange={setQuery} onToggle={togglePerson} onAddExternal={() => setExternalOpen(true)} onSplit={() => rebalance(payers)} onContinue={completeSelection} onEdit={editSelection} />
+      {selectionComplete ? <PayerList payers={payers} collapsed={reviewComplete} errors={visibleReviewErrors} onChange={updatePayer} onEdit={editReview} onContinue={() => completeReview()} invalidAmountIds={invalidAmountIds} warnings={warnings} onAmountValidityChange={updateAmountValidity} onEditSelection={editSelection} /> : null}
+      {selectionComplete && reviewComplete ? <RecipientConfirmation payers={payers} people={operation.people} collapsed={recipientsConfirmed} errors={visibleRecipientErrors} onChange={updateRecipient} onEdit={editRecipients} onContinue={completeRecipients} onSearchDirectory={searchDirectoryPeople} /> : null}
     </div>
-    <StickyActionBar version={appVersion} hint={actionHint} ready={selectionComplete} saving={saving} completed={saved} confirm={false} label={!recipientsConfirmed && deliveryPayers.length ? 'Confirmar destinatários' : undefined} onSave={() => void save()} />
+    <StickyActionBar version={appVersion} hint={actionHint} ready={allStepsComplete} saving={saving} completed={saved} onSave={() => void save()} />
     {successFeedback ? <SuccessFeedback text={successFeedback} /> : null}
     <ExternalPayerDialog open={externalOpen} selectedIds={selectedIds} query={externalQuery} onQueryChange={setExternalQuery} onClose={() => setExternalOpen(false)} onSelect={addExternal} onSearch={searchDirectoryPeople} />
     <StatusConfirmationDialog open={confirmOpen} onClose={() => setConfirmOpen(false)} onConfirm={() => void executeSave()} />
     <ExistingPayersDialog payers={operation.payers} open={existingPayersOpen} onReview={() => setExistingPayersOpen(false)} onReplace={() => { setExistingPayersOpen(false); setReplaceExisting(true); void executeSave(true) }} />
-    <AllocationMismatchDialog open={mismatchOpen} operationTotal={operation.totalCents} allocatedTotal={totalRateado} onClose={() => setMismatchOpen(false)} onContinue={() => { setMismatchOpen(false); void save(true) }} />
+    <AllocationMismatchDialog open={mismatchOpen} operationTotal={operation.totalCents} allocatedTotal={totalRateado} onClose={() => setMismatchOpen(false)} onContinue={() => { setMismatchOpen(false); completeReview(true) }} />
     <BlockingErrorDialog message={blockingError} onClose={() => setBlockingError(null)} />
   </PopupShell>
 }

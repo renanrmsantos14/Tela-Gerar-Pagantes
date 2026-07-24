@@ -1,14 +1,14 @@
 {
   "name": "cr40f-gerar-pagantes",
   "private": true,
-  "version": "0.2.68",
+  "version": "0.2.71",
   "type": "module",
   "scripts": {
     "dev": "node scripts/bump-version.mjs && vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
-    "push": "node scripts/bump-version.mjs && npm run package && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-webresources.ps1 -EnvironmentUrl https://org23b93544.crm2.dynamics.com",
+    "push": "node scripts/bump-version.mjs && npm run package && npm run push:plugin:dev && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-webresources.ps1 -EnvironmentUrl https://org23b93544.crm2.dynamics.com",
     "push:plugin:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/push-plugin.ps1 -EnvironmentUrl https://org23b93544.crm2.dynamics.com -EnvironmentName dev",
     "push:plugin:prod": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/push-plugin.ps1 -EnvironmentUrl https://orgf261ae8e.crm2.dynamics.com -EnvironmentName prod",
     "package": "npm run build && node scripts/package-webresource.mjs",

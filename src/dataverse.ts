@@ -124,7 +124,7 @@ export async function searchDirectoryPeople(query: string, nextLink?: string): P
     }
   }
   const escaped = encodeURIComponent(normalized.replace(/'/g, "''")).replace(/'/g, '%27')
-  const filter = `statecode eq 0 and (contains(cr40f_nomedopassageiro,'${escaped}') or contains(cr40f_email,'${escaped}'))`
+  const filter = `(contains(cr40f_nomedopassageiro,'${escaped}') or contains(cr40f_email,'${escaped}'))`
   const options = nextLink ?? `?$select=cr40f_bancodedadosid,cr40f_nomedopassageiro,cr40f_email,cr40f_telefone&$filter=${filter}&$orderby=cr40f_nomedopassageiro asc&$top=20`
   const page = await api.retrieveMultipleRecords('cr40f_bancodedados', options)
   return { people: page.entities.map((row) => toPerson(row, 'Adicionado')), nextLink: page.nextLink }

@@ -1,9 +1,11 @@
-import { ArrowLeft, Check, LoaderCircle, Mail, Pencil, ReceiptText, Search, UserRoundPlus } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, LoaderCircle, Mail, Pencil, ReceiptText, Search, UserRoundPlus } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Payer, Person, PersonSearch } from '../../domain'
+import { CompletedStep, StepValidation } from './StepShell'
 import { Button } from './ui'
 
 const emailValid = (email: string) => /^\S+@\S+\.\S+$/.test(email.trim())
+const personValid = (person: Person) => Boolean(person.id && person.name.trim() && emailValid(person.email))
 
 function recipientFor(payer: Payer, people: Person[]): Person {
   return people.find((person) => person.id === (payer.recipientId ?? payer.id))
@@ -13,14 +15,20 @@ function recipientFor(payer: Payer, people: Person[]): Person {
 export function RecipientConfirmation({
   payers,
   people,
+  collapsed,
+  errors,
   onChange,
-  onBack,
+  onEdit,
+  onContinue,
   onSearchDirectory
 }: {
   payers: Payer[]
   people: Person[]
+  collapsed: boolean
+  errors: string[]
   onChange: (payerId: string, recipient: Person) => void
-  onBack: () => void
+  onEdit: () => void
+  onContinue: () => void
   onSearchDirectory?: PersonSearch
 }) {
   const [searchingFor, setSearchingFor] = useState<string | null>(null)
@@ -38,6 +46,7 @@ export function RecipientConfirmation({
   }, [people, query])
 
   useEffect(() => {
+    const currentRequest = ++requestId.current
     if (!directoryMode || !onSearchDirectory || query.trim().length < 2) {
       setResults([])
       setNextLink(undefined)
@@ -45,7 +54,8 @@ export function RecipientConfirmation({
       setLoading(false)
       return
     }
-    const currentRequest = ++requestId.current
+    setResults([])
+    setNextLink(undefined)
     const timer = window.setTimeout(async () => {
       setLoading(true)
       setSearchError('')
@@ -75,28 +85,34 @@ export function RecipientConfirmation({
 
   async function loadMore() {
     if (!onSearchDirectory || !nextLink || loading) return
+    const currentRequest = ++requestId.current
     setLoading(true)
+    setSearchError('')
     try {
       const page = await onSearchDirectory(query, nextLink)
+      if (currentRequest !== requestId.current) return
       setResults((current) => [...current, ...page.people.filter((person) => !current.some((item) => item.id === person.id))])
       setNextLink(page.nextLink)
     } catch {
-      setSearchError('Não foi possível carregar mais resultados.')
+      if (currentRequest === requestId.current) setSearchError('Não foi possível carregar mais resultados.')
     } finally {
-      setLoading(false)
+      if (currentRequest === requestId.current) setLoading(false)
     }
   }
 
-  return <section className="panel recipient-confirmation">
+  if (collapsed) {
+    return <CompletedStep id="step-recipients" step={3} label="DESTINATÁRIOS" summary={eligible.length ? `${eligible.length} ${eligible.length === 1 ? 'e-mail confirmado' : 'e-mails confirmados'}` : 'Nenhum envio por e-mail'} onEdit={onEdit} />
+  }
+
+  return <section id="step-recipients" className="panel recipient-confirmation step-panel step-panel--active" tabIndex={-1}>
     <div className="recipient-confirmation__header">
       <div><span className="section-kicker">3. DESTINATÁRIOS</span><h2>Confirme o destinatário do e-mail</h2></div>
-      <Button variant="ghost" className="button-compact recipient-confirmation__back" onClick={onBack}><ArrowLeft size={15} />Revisão</Button>
     </div>
     <div className="recipient-confirmation__list">
       {eligible.map((payer) => {
         const recipient = recipientFor(payer, people)
         const isSearching = searchingFor === payer.id
-        const validRecipient = emailValid(recipient.email)
+        const validRecipient = personValid(recipient)
         const choices = directoryMode ? results : localChoices
         return <article className={`recipient-card ${validRecipient ? '' : 'recipient-card--error'}`} key={payer.id}>
           <div className="recipient-card__receipt"><ReceiptText size={17} aria-hidden="true" /><span>Recibo em nome de <strong>{payer.name}</strong></span></div>
@@ -112,7 +128,7 @@ export function RecipientConfirmation({
               }
             }}><Pencil size={15} />{isSearching ? 'Fechar' : 'Alterar'}</Button>
           </div>
-          {!validRecipient ? <p className="recipient-card__error" role="alert">Escolha uma pessoa com e-mail cadastrado.</p> : null}
+          {!validRecipient ? <p className="recipient-card__error" role="alert">Escolha uma pessoa cadastrada com nome e e-mail válidos.</p> : null}
           {isSearching ? <div className="recipient-search">
             <div className="recipient-search__toolbar">
               {directoryMode ? <Button variant="ghost" className="recipient-search__scope" onClick={() => { setDirectoryMode(false); setQuery(''); setResults([]) }}><ArrowLeft size={14} />Pessoas da OP</Button> : null}
@@ -130,7 +146,7 @@ export function RecipientConfirmation({
               {!loading && !searchError && (!directoryMode || query.trim().length >= 2) && !choices.length ? <p className="recipient-search__empty">Nenhuma pessoa encontrada.</p> : null}
               {choices.map((person) => {
                 const selected = recipient.id === person.id
-                const valid = emailValid(person.email)
+                const valid = personValid(person)
                 return <label className={`recipient-option ${selected ? 'is-selected' : ''} ${valid ? '' : 'is-disabled'}`} key={person.id}>
                   <input type="radio" name={`recipient-${payer.id}`} checked={selected} disabled={!valid} onChange={() => { onChange(payer.id, person); resetSearch() }} />
                   <span className="recipient-option__avatar" aria-hidden="true">{person.name.charAt(0)}</span>
@@ -139,11 +155,16 @@ export function RecipientConfirmation({
                 </label>
               })}
             </fieldset>
-            {!directoryMode && onSearchDirectory ? <Button variant="ghost" className="recipient-search__directory" onClick={() => { setDirectoryMode(true); setQuery(''); setResults([]) }}><UserRoundPlus size={16} />Adicionar do cadastro</Button> : null}
+            {!directoryMode && onSearchDirectory ? <Button variant="ghost" className="recipient-search__directory" onClick={() => { setDirectoryMode(true); setQuery(''); setResults([]) }}><UserRoundPlus size={16} />Adicionar destinatário</Button> : null}
             {directoryMode && nextLink ? <Button className="recipient-search__more" disabled={loading} onClick={() => void loadMore()}>{loading ? 'Carregando...' : 'Carregar mais'}</Button> : null}
           </div> : null}
         </article>
       })}
+    </div>
+    {!eligible.length ? <div className="recipient-empty"><Mail size={18} /><span>Nenhum envio por e-mail precisa de confirmação.</span></div> : null}
+    <StepValidation id="step-recipients-errors" errors={errors} />
+    <div className="step-actions">
+      <Button variant="primary" aria-disabled={errors.length > 0} aria-describedby={errors.length ? 'step-recipients-errors' : undefined} onClick={onContinue}>Concluir etapa<ChevronRight size={17} /></Button>
     </div>
   </section>
 }

@@ -48,7 +48,7 @@ public sealed class GerarPagantesPlugin : IPlugin
             if (request.RequestId == Guid.Empty) throw new InvalidPluginExecutionException("requestId é obrigatório.");
             if (IsProcessed(service, request.RequestId)) throw new InvalidPluginExecutionException("Esta solicitação já foi processada.");
             _settings.ValidateFor(request);
-            var finance = service.Retrieve(Financeiro, target.Id, new ColumnSet("versionnumber", "cr40f_id", "statecode", "statuscode", "ownerid"));
+            var finance = service.Retrieve(Financeiro, target.Id, new ColumnSet("versionnumber", "statecode", "statuscode", "ownerid"));
             ValidateOperationAccess(service, context, finance);
             ValidateVersion(finance, request.ExpectedFinanceiroVersion);
             var totalCents = CalculateOperationTotal(service, target.Id);
@@ -140,7 +140,7 @@ public sealed class GerarPagantesPlugin : IPlugin
         {
             if (!people.TryGetValue(payer.PaganteId, out var person) || person.GetAttributeValue<OptionSetValue>("statecode")?.Value == 1) throw new InvalidPluginExecutionException("Um pagante não existe ou está inativo.");
             if (!string.Equals(person.GetAttributeValue<string>("cr40f_nomedopassageiro")?.Trim(), payer.Name?.Trim(), StringComparison.Ordinal) || !string.Equals(person.GetAttributeValue<string>("cr40f_email")?.Trim(), payer.Email?.Trim(), StringComparison.OrdinalIgnoreCase)) throw new InvalidPluginExecutionException("Os dados do pagante divergem do Dataverse.");
-            if (payer.SendEmail && (!people.TryGetValue(payer.RecipientId, out var recipient) || recipient.GetAttributeValue<OptionSetValue>("statecode")?.Value == 1 || !string.Equals(recipient.GetAttributeValue<string>("cr40f_nomedopassageiro")?.Trim(), payer.RecipientName?.Trim(), StringComparison.Ordinal) || !string.Equals(recipient.GetAttributeValue<string>("cr40f_email")?.Trim(), payer.RecipientEmail?.Trim(), StringComparison.OrdinalIgnoreCase))) throw new InvalidPluginExecutionException("Os dados do destinatário divergem do Dataverse.");
+            if (payer.SendEmail && (!people.TryGetValue(payer.RecipientId, out var recipient) || !string.Equals(recipient.GetAttributeValue<string>("cr40f_nomedopassageiro")?.Trim(), payer.RecipientName?.Trim(), StringComparison.Ordinal) || !string.Equals(recipient.GetAttributeValue<string>("cr40f_email")?.Trim(), payer.RecipientEmail?.Trim(), StringComparison.OrdinalIgnoreCase))) throw new InvalidPluginExecutionException("Os dados do destinatário divergem do Dataverse.");
         }
     }
 

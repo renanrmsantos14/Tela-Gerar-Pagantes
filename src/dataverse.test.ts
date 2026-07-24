@@ -113,6 +113,9 @@ describe('searchDirectoryPeople', () => {
     expect(retrieveMultipleRecords).toHaveBeenCalledWith('cr40f_bancodedados', expect.stringContaining("contains(cr40f_nomedopassageiro,'Pessoa')"))
     expect(retrieveMultipleRecords).toHaveBeenCalledWith('cr40f_bancodedados', expect.stringContaining("contains(cr40f_email,'Pessoa')"))
     expect(retrieveMultipleRecords).toHaveBeenCalledWith('cr40f_bancodedados', expect.stringContaining('$top=20'))
+    expect(retrieveMultipleRecords.mock.calls[0][1]).not.toContain('statecode')
+    await searchDirectoryPeople('Pessoa', 'next-page')
+    expect(retrieveMultipleRecords).toHaveBeenLastCalledWith('cr40f_bancodedados', 'next-page')
   })
 })
 
