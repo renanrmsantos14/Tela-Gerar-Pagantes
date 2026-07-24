@@ -11,4 +11,4 @@
 - [x] Validar segredo, tamanho e mojibake
 - [x] Migrar configuracao do step para variaveis de ambiente da solucao
 - [x] Preparar sincronizacao DEV e exportacao managed
-- [ ] Criar commit local
+- [x] Criar commit local
