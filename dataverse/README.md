@@ -20,7 +20,9 @@
 
 O App Registration usado pelo plugin exige `Mail.Send` Application no Microsoft
 Graph, consentimento de administrador e acesso à mailbox remetente. Segredos
-ficam em variáveis de ambiente do tipo Secret; nunca em Flow, JavaScript,
-solução exportada, web resource ou configuração do step.
+ficam em valores confidenciais de variáveis de ambiente String; nunca em Flow,
+JavaScript, solução exportada, web resource ou configuração do step. O plugin
+lê exclusivamente a configuração com identidade SYSTEM; as regras de acesso da
+OP continuam sob a identidade do usuário solicitante.
 
 O app não lê `new_FlowURLGerarPagantesHttp` e não grava pagantes diretamente.

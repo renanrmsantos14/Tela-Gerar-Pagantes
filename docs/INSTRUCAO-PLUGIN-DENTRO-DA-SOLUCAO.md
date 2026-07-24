@@ -200,9 +200,11 @@ Client ID, client secret, tokens e URLs específicas não devem ser gravados em:
 - solução exportada;
 - web resource.
 
-Neste projeto, IDs, remetente, Reply-To, destinatários internos e prefixo dos
-assets são variáveis de ambiente da solução. Os segredos Cielo e Graph usam
-variáveis do tipo Secret e são recuperados pelo plugin em runtime.
+Neste projeto, IDs, valores confidenciais, remetente, Reply-To, destinatários
+internos e prefixo dos assets são variáveis de ambiente da solução. Somente as
+definições seguem no ZIP; cada ambiente informa seus valores. O plugin lê essa
+configuração com identidade SYSTEM, sem expor permissão de leitura ao usuário
+comum; a operação da OP continua sendo executada com a identidade solicitante.
 
 O App Registration do Microsoft Graph exige `Mail.Send` Application, consentimento
 de administrador e acesso à mailbox remetente. Restrinja o aplicativo à mailbox

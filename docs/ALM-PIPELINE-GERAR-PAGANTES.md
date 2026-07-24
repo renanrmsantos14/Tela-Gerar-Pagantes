@@ -23,18 +23,20 @@ ambiente:
 | Variavel | Tipo | Uso |
 | --- | --- | --- |
 | `cr40f_GerarPagantesCieloClientId` | String | Cielo |
-| `cr40f_GerarPagantesCieloClientSecret` | Secret | Cielo |
+| `cr40f_GerarPagantesCieloClientSecret` | String confidencial | Cielo |
 | `cr40f_GerarPagantesGraphTenantId` | String | Microsoft Graph |
 | `cr40f_GerarPagantesGraphClientId` | String | Microsoft Graph |
-| `cr40f_GerarPagantesGraphClientSecret` | Secret | Microsoft Graph |
+| `cr40f_GerarPagantesGraphClientSecret` | String confidencial | Microsoft Graph |
 | `cr40f_GerarPagantesSenderEmail` | String | Remetente |
 | `cr40f_GerarPagantesReplyToEmail` | String | Reply-To opcional |
 | `cr40f_GerarPagantesInternalRecipients` | String | Copias internas opcionais, separadas por `;` |
 | `cr40f_GerarPagantesEmailAssetPrefix` | String | Prefixo dos web resources |
 
-Segredos nao ficam no ZIP, no Git, nos web resources nem na configuracao do
-step. O plugin usa `RetrieveEnvironmentVariableSecretValue` para obte-los em
-tempo de execucao.
+Valores confidenciais nao ficam no ZIP, no Git, nos web resources nem na
+configuracao do step. Somente as definicoes entram na solucao; os valores atuais
+sao mantidos por ambiente. O plugin os le com identidade SYSTEM, sem conceder
+leitura das variaveis ao usuario comum; as operacoes da OP continuam na
+identidade do usuario solicitante.
 
 ## Comandos
 
@@ -47,5 +49,4 @@ npm run solution:export:dev
 ```
 
 O Pipeline nativo solicita os valores das variaveis de ambiente no primeiro
-deploy do destino. Para as variaveis Secret, configure o secret store do
-ambiente antes da promocao.
+deploy do destino. Informe os valores confidenciais somente no ambiente destino.

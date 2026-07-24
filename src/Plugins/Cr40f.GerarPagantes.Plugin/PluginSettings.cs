@@ -28,13 +28,15 @@ public sealed class PluginSettings
     public List<string> InternalRecipients { get; private set; } = new();
     public string EmailAssetPrefix { get; private set; } = "cr40f_/GerarPagantes/email/";
 
-    public static PluginSettings Load(IOrganizationService service, bool requiresCielo, bool requiresGraph)
+    public static PluginSettings Load(IOrganizationService service)
     {
         var values = LoadTextValues(service, new[]
         {
             CieloClientIdVariable,
+            CieloClientSecretVariable,
             GraphTenantIdVariable,
             GraphClientIdVariable,
+            GraphClientSecretVariable,
             SenderEmailVariable,
             ReplyToEmailVariable,
             InternalRecipientsVariable,
@@ -44,10 +46,10 @@ public sealed class PluginSettings
         return new PluginSettings
         {
             CieloClientId = Get(values, CieloClientIdVariable),
-            CieloClientSecret = requiresCielo ? LoadSecret(service, CieloClientSecretVariable) : string.Empty,
+            CieloClientSecret = Get(values, CieloClientSecretVariable),
             GraphTenantId = Get(values, GraphTenantIdVariable),
             GraphClientId = Get(values, GraphClientIdVariable),
-            GraphClientSecret = requiresGraph ? LoadSecret(service, GraphClientSecretVariable) : string.Empty,
+            GraphClientSecret = Get(values, GraphClientSecretVariable),
             SenderEmail = Get(values, SenderEmailVariable),
             ReplyToEmail = Get(values, ReplyToEmailVariable),
             InternalRecipients = Get(values, InternalRecipientsVariable)
@@ -106,22 +108,6 @@ public sealed class PluginSettings
                 ? value
                 : definition.GetAttributeValue<string>("defaultvalue")?.Trim() ?? string.Empty,
             StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static string LoadSecret(IOrganizationService service, string schemaName)
-    {
-        try
-        {
-            var response = service.Execute(new OrganizationRequest("RetrieveEnvironmentVariableSecretValue")
-            {
-                ["EnvironmentVariableName"] = schemaName
-            });
-            return response.Results.TryGetValue("SecretValue", out var value) ? value as string ?? string.Empty : string.Empty;
-        }
-        catch (Exception error)
-        {
-            throw new InvalidOperationException($"Não foi possível recuperar a variável secreta '{schemaName}'.", error);
-        }
     }
 
     private static string Get(IReadOnlyDictionary<string, string> values, string schemaName) =>

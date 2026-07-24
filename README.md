@@ -3,7 +3,7 @@
 > ALM: `npm run push` sincroniza os componentes somente no DEV. Teste e producao
 > recebem a mesma solucao pelo Pipeline Power Platform; nao use
 > `push:plugin:prod`. A configuracao por ambiente esta em variaveis de ambiente
-> da solucao e os segredos usam o tipo Secret.
+> da solucao e os valores confidenciais ficam somente no ambiente destino.
 
 Web resource React e plugin Dataverse para rateio, criação de link Cielo e envio
 do e-mail de cobrança de uma OP.
@@ -34,8 +34,9 @@ npm run solution:export:dev
 ```
 
 Os valores sao configurados nas variaveis de ambiente da solucao durante a
-promocao pelo Pipeline. Os secrets Cielo e Graph usam o tipo Secret e nunca
-entram no terminal, no codigo ou no ZIP.
+promocao pelo Pipeline. Os valores confidenciais Cielo e Graph nunca entram no
+codigo ou no ZIP. O plugin le somente essa configuracao com identidade SYSTEM;
+o usuario comum continua sujeito as permissoes da OP e dos pagantes.
 
 O App Registration do Graph precisa da permissão de aplicativo `Mail.Send`, com
 consentimento de administrador, e permissão para enviar pela mailbox configurada.

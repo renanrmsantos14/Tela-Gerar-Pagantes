@@ -32,6 +32,7 @@ public sealed class GerarPagantesPlugin : IPlugin
         var tracing = (ITracingService)serviceProvider.GetService(typeof(ITracingService));
         var factory = (IOrganizationServiceFactory)serviceProvider.GetService(typeof(IOrganizationServiceFactory));
         var service = factory.CreateOrganizationService(context.UserId);
+        var configurationService = factory.CreateOrganizationService(null);
         var logWriter = new OperationalLogWriter(service, tracing);
         var response = new GerarPagantesResponse();
         try
@@ -52,7 +53,7 @@ public sealed class GerarPagantesPlugin : IPlugin
             ValidateExistingPayload(request, existing);
             var needsCielo = request.Pagantes.Any(payer => payer.GenerateLink) ||
                 existing.Values.Any(row => !string.IsNullOrWhiteSpace(row.GetAttributeValue<string>("cr40f_cielolinkid")));
-            var settings = PluginSettings.Load(service, needsCielo, request.Pagantes.Any(payer => payer.SendEmail));
+            var settings = PluginSettings.Load(configurationService);
             settings.ValidateFor(request, needsCielo);
             var cielo = needsCielo ? new CieloClient(settings.CieloClientId, settings.CieloClientSecret) : null;
             var graph = request.Pagantes.Any(payer => payer.SendEmail) ? new GraphEmailClient(settings) : null;
