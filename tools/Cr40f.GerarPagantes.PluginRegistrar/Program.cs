@@ -18,7 +18,6 @@ const string PluginTypeName = "Cr40f.GerarPagantes.Plugin.GerarPagantesPlugin";
 const string CustomApiMessageName = "cr40f_GerarPagantes";
 const string BoundEntity = "cr40f_financeiro";
 const int PluginAssemblyComponentType = 91;
-const int SdkMessageProcessingStepComponentType = 92;
 
 Log("autenticando no Dataverse");
 var connectionString = $"AuthType=OAuth;Url={environmentUrl.TrimEnd('/')};AppId=51f81489-12ee-4a9e-aaae-a2591f45987d;RedirectUri=http://localhost;LoginPrompt=Auto";
@@ -32,10 +31,9 @@ var assemblyInfo = AssemblyInfo.Read(dllPath);
 var assemblyContent = Convert.ToBase64String(File.ReadAllBytes(dllPath));
 var assemblyId = UpsertAssembly(service, assemblyInfo, assemblyContent);
 var pluginTypeId = UpsertPluginType(service, assemblyId);
-var customApiId = EnsureCustomApi(service, pluginTypeId, solutionUniqueName, CustomApiMessageName, BoundEntity);
-var stepId = ConfigureMainOperationStep(service, customApiId, pluginTypeId);
 EnsureSolutionComponent(service, assemblyId, solutionUniqueName, PluginAssemblyComponentType);
-EnsureSolutionComponent(service, stepId, solutionUniqueName, SdkMessageProcessingStepComponentType);
+var customApiId = EnsureCustomApi(service, pluginTypeId, solutionUniqueName, CustomApiMessageName, BoundEntity);
+ConfigureMainOperationStep(service, customApiId, pluginTypeId);
 
 if (publish)
 {
@@ -97,10 +95,15 @@ static Guid EnsureCustomApi(ServiceClient service, Guid pluginTypeId, string sol
     if (existing is not null)
     {
         Log($"reutilizando Custom API {customApiMessageName}");
-        service.Update(new Entity("customapi", existing.Id)
+        var updateRequest = new UpdateRequest
         {
-            ["plugintypeid"] = Ref("plugintype", pluginTypeId)
-        });
+            Target = new Entity("customapi", existing.Id)
+            {
+                ["plugintypeid"] = Ref("plugintype", pluginTypeId)
+            }
+        };
+        updateRequest["SolutionUniqueName"] = solutionUniqueName;
+        service.Execute(updateRequest);
         return existing.Id;
     }
 
