@@ -20,7 +20,10 @@ const string BoundEntity = "cr40f_financeiro";
 const int PluginAssemblyComponentType = 91;
 
 Log("autenticando no Dataverse");
-var connectionString = $"AuthType=OAuth;Url={environmentUrl.TrimEnd('/')};AppId=51f81489-12ee-4a9e-aaae-a2591f45987d;RedirectUri=http://localhost;LoginPrompt=Auto";
+var tokenCacheDirectory = Path.Combine(Path.GetTempPath(), "Betinhos", "Dataverse");
+Directory.CreateDirectory(tokenCacheDirectory);
+var tokenCachePath = Path.Combine(tokenCacheDirectory, "gerar-pagantes.msalcache.bin");
+var connectionString = $"AuthType=OAuth;Integrated Security=true;Url={environmentUrl.TrimEnd('/')};AppId=51f81489-12ee-4a9e-aaae-a2591f45987d;RedirectUri=app://58145B91-0C36-4500-8554-080854F2AC97;TokenCacheStorePath={tokenCachePath};LoginPrompt=Auto";
 using var service = new ServiceClient(connectionString);
 if (!service.IsReady)
 {

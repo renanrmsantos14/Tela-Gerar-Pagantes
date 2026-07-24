@@ -6,11 +6,17 @@ using Microsoft.Crm.Sdk.Messages;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 
 namespace Cr40f.GerarPagantes.Plugin;
 
 public sealed class GerarPagantesPlugin : IPlugin
 {
+    private static readonly JsonSerializerSettings ApiResponseJsonSettings = new()
+    {
+        ContractResolver = new CamelCasePropertyNamesContractResolver()
+    };
+
     private const string Financeiro = "cr40f_financeiro";
     private const string Pagantes = "cr40f_pagantes";
     private const string Composicao = "cr40f_composicaodeprecos";
@@ -101,7 +107,7 @@ public sealed class GerarPagantesPlugin : IPlugin
                 ? error
                 : new InvalidPluginExecutionException("Não foi possível concluir a geração dos pagantes. " + Sanitize(error.Message), error);
         }
-        context.OutputParameters["cr40f_ResponseJson"] = JsonConvert.SerializeObject(response);
+        context.OutputParameters["cr40f_ResponseJson"] = JsonConvert.SerializeObject(response, ApiResponseJsonSettings);
     }
 
     private static EntityReference GetTarget(IPluginExecutionContext context)
